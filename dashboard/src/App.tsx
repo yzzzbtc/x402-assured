@@ -13,7 +13,7 @@ import type {
   ConformanceResult,
   ConformanceChecks,
 } from './types.js';
-import { verifyTrace } from '../../sdk/ts/index.js';
+import { verifyTrace, verifyMirrorSig } from '../../sdk/ts/index.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3000';
 const ESCROW_PROGRAM_ID = import.meta.env.VITE_ESCROW_PROGRAM_ID ?? '6zpAcx4Yo9MmDf4w8pBGez8bm47zyKuyjr5Y5QkC3ayL';
@@ -161,6 +161,7 @@ export default function App() {
   const [conformanceResult, setConformanceResult] = useState<ConformanceResult | null>(null);
   const [conformanceRunning, setConformanceRunning] = useState(false);
   const [traceVerified, setTraceVerified] = useState<boolean | null>(null);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'docs'>('dashboard');
 
   useEffect(() => {
     let active = true;
@@ -305,6 +306,31 @@ export default function App() {
           </div>
         </header>
 
+        <nav className="flex gap-2 border-b border-slate-800 pb-2">
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`px-4 py-2 text-sm font-semibold transition-colors rounded-t-lg ${
+              activeTab === 'dashboard'
+                ? 'bg-slate-800 text-white border-b-2 border-cyan-500'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Dashboard
+          </button>
+          <button
+            onClick={() => setActiveTab('docs')}
+            className={`px-4 py-2 text-sm font-semibold transition-colors rounded-t-lg ${
+              activeTab === 'docs'
+                ? 'bg-slate-800 text-white border-b-2 border-cyan-500'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Documentation
+          </button>
+        </nav>
+
+        {activeTab === 'dashboard' && (
+        <>
         <div className="grid gap-4 xl:grid-cols-4">
           <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-lg xl:col-span-3">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -889,6 +915,43 @@ export default function App() {
                     </div>
                   </div>
                 )}
+                {selectedCall.mirrors && selectedCall.mirrors.length > 0 && (
+                  <div className="mt-6">
+                    <h3 className="text-xs uppercase tracking-wide text-slate-500">Assured-Mirrors (Fallback Mesh)</h3>
+                    <div className="mt-2 space-y-3">
+                      {selectedCall.mirrors.map((mirror, idx) => {
+                        const signerPk = selectedCall.trace?.signer;
+                        const isValid = signerPk
+                          ? verifyMirrorSig(selectedCall.serviceId, mirror.url, mirror.sig, signerPk)
+                          : null;
+                        return (
+                          <div
+                            key={idx}
+                            className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-4"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">Mirror URL</div>
+                                <div className="break-all font-mono text-[11px] text-slate-200">{mirror.url}</div>
+                                <div className="text-xs uppercase tracking-wide text-slate-500 mt-3 mb-1">Signature</div>
+                                <div className="break-all font-mono text-[10px] text-slate-300">{mirror.sig}</div>
+                              </div>
+                              {isValid !== null && (
+                                <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold ${
+                                  isValid
+                                    ? 'border border-emerald-500/40 bg-emerald-500/20 text-emerald-300'
+                                    : 'border border-rose-500/40 bg-rose-500/20 text-rose-300'
+                                }`}>
+                                  {isValid ? '✓' : '✗'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {(selectedCall.webhookVerified !== null || selectedCall.webhookReceivedAt) && (
                   <div className="mt-6">
                     <h3 className="text-xs uppercase tracking-wide text-slate-500">Settlement webhook</h3>
@@ -932,6 +995,198 @@ export default function App() {
             )}
           </div>
         </section>
+        </>
+        )}
+
+        {activeTab === 'docs' && (
+          <div className="space-y-6">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 shadow-xl">
+              <h2 className="text-2xl font-semibold text-white mb-6">x402-Assured Documentation</h2>
+
+              <section className="space-y-8">
+                <div>
+                  <h3 className="text-xl font-semibold text-cyan-400 mb-3">What is x402-Assured?</h3>
+                  <p className="text-slate-300 leading-relaxed">
+                    x402-Assured extends the HTTP 402 Payment Required protocol with Solana-based escrow, SLA enforcement,
+                    reputation tracking, and dispute resolution. It enables trustless micropayments for API calls while
+                    maintaining wire-compatibility with the x402 spec.
+                  </p>
+                </div>
+
+                <div>
+                  <h3 className="text-xl font-semibold text-cyan-400 mb-3">Five Differentiating Features</h3>
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+                      <h4 className="font-semibold text-emerald-300 mb-2">1. Assured-Trace (Cryptographic Audit Trail)</h4>
+                      <p className="text-sm text-slate-300 leading-relaxed">
+                        Every response is signed with Ed25519 signatures, creating an unforgeable audit trail.
+                        Clients can verify that the server actually delivered the claimed response hash at the claimed time.
+                      </p>
+                      <div className="mt-2 text-xs font-mono text-slate-400">
+                        PaymentRequirements: trace.signature, trace.signer, trace.responseHash
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-4">
+                      <h4 className="font-semibold text-cyan-300 mb-2">2. Assured-Stream (Incremental Payment Releases)</h4>
+                      <p className="text-sm text-slate-300 leading-relaxed">
+                        For long-running operations, funds are released incrementally as progress milestones are reached.
+                        Reduces risk for both parties during streaming responses or multi-step workflows.
+                      </p>
+                      <div className="mt-2 text-xs font-mono text-slate-400">
+                        PaymentRequirements: stream=true, totalUnits=N → partial releases via fulfill_partial
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+                      <h4 className="font-semibold text-emerald-300 mb-2">3. Assured-Bond (Stake-Based Reputation)</h4>
+                      <p className="text-sm text-slate-300 leading-relaxed">
+                        Providers can lock SOL on-chain as collateral, signaling commitment to quality.
+                        Bonds are slashed on disputes, creating economic incentive for good behavior.
+                      </p>
+                      <div className="mt-2 text-xs font-mono text-slate-400">
+                        Reputation contract: bond_create, bond_withdraw → visible in dashboard Bond column
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-4">
+                      <h4 className="font-semibold text-purple-300 mb-2">4. SLA Scorecards (P95 Latency Tracking)</h4>
+                      <p className="text-sm text-slate-300 leading-relaxed">
+                        On-chain reputation tracks EWMA and P95 latency estimates. Clients can enforce maximum latency
+                        policies before payment, filtering out slow or unreliable providers.
+                      </p>
+                      <div className="mt-2 text-xs font-mono text-slate-400">
+                        Reputation contract: report_latency → p95Ms, ewmaMs → SDK: policy.slaP95MaxMs
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-4">
+                      <h4 className="font-semibold text-purple-300 mb-2">5. Signed Fallback Mesh (Verified Mirrors)</h4>
+                      <p className="text-sm text-slate-300 leading-relaxed">
+                        Providers advertise signed mirror URLs for redundancy. Clients verify signatures before routing,
+                        ensuring mirrors are authentic and not malicious redirects.
+                      </p>
+                      <div className="mt-2 text-xs font-mono text-slate-400">
+                        PaymentRequirements: mirrors=[{"{url, sig}"}] → SDK: verifyMirrorSig()
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-xl font-semibold text-cyan-400 mb-3">Architecture</h3>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4">
+                      <h4 className="font-semibold text-white mb-2">On-Chain Components</h4>
+                      <ul className="space-y-1 text-sm text-slate-300">
+                        <li>• <span className="font-mono text-cyan-300">Escrow Program</span> - Payment locks, SLA enforcement, disputes</li>
+                        <li>• <span className="font-mono text-cyan-300">Reputation Program</span> - Scores, bonds, latency tracking</li>
+                        <li>• <span className="text-slate-400">Deployed on Solana Devnet</span></li>
+                      </ul>
+                    </div>
+                    <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4">
+                      <h4 className="font-semibold text-white mb-2">Off-Chain Components</h4>
+                      <ul className="space-y-1 text-sm text-slate-300">
+                        <li>• <span className="font-mono text-cyan-300">SDK</span> - Client library with policy enforcement</li>
+                        <li>• <span className="font-mono text-cyan-300">Server</span> - Provider API with settlement automation</li>
+                        <li>• <span className="font-mono text-cyan-300">CLI</span> - Conformance testing & demos</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-xl font-semibold text-cyan-400 mb-3">Quick Start</h3>
+                  <div className="rounded-xl border border-slate-700 bg-slate-950 p-4">
+                    <pre className="text-sm text-slate-300 overflow-x-auto">
+<code>{`# Install dependencies
+pnpm install
+
+# Start server & dashboard
+pnpm dev
+
+# Run demos (in separate terminal)
+pnpm demo:good    # Successful payment flow
+pnpm demo:bad     # Disputed payment flow
+pnpm demo:stream  # Streaming payment with partial releases
+
+# Test conformance
+pnpm conf http://localhost:3000/api/good`}</code>
+                    </pre>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-xl font-semibold text-cyan-400 mb-3">Usage Example</h3>
+                  <div className="rounded-xl border border-slate-700 bg-slate-950 p-4">
+                    <pre className="text-sm text-slate-300 overflow-x-auto">
+<code>{`import { Assured402Client, balanced } from 'x402-assured/sdk';
+import { Connection, Keypair } from '@solana/web3.js';
+
+const client = new Assured402Client({
+  connection: new Connection('https://api.devnet.solana.com'),
+  wallet: loadWallet(),
+  escrowProgramId: '...',
+  policy: balanced() // minReputation: 0.6, maxPrice: 0.05
+});
+
+// Make a payment-required request with automatic policy enforcement
+const response = await client.fetch('http://provider.com/api/compute');
+const data = await response.json();
+
+// SDK automatically:
+// - Checks provider reputation & p95 latency
+// - Verifies bond status if required
+// - Handles payment via escrow
+// - Validates trace signatures
+// - Routes to mirrors on failure`}</code>
+                    </pre>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-xl font-semibold text-cyan-400 mb-3">Dashboard Features</h3>
+                  <ul className="space-y-2 text-slate-300">
+                    <li className="flex items-start gap-2">
+                      <span className="text-emerald-400 mt-1">✓</span>
+                      <span><strong className="text-white">Services Table</strong> - View all providers with reputation scores, bond status, and P95 latency</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-emerald-400 mt-1">✓</span>
+                      <span><strong className="text-white">Recent Calls</strong> - Track payment flows with transaction links and outcomes</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-emerald-400 mt-1">✓</span>
+                      <span><strong className="text-white">Transcript Drawer</strong> - Inspect full payment lifecycle with trace verification</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-emerald-400 mt-1">✓</span>
+                      <span><strong className="text-white">Playground</strong> - Test different endpoints with custom policies</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-emerald-400 mt-1">✓</span>
+                      <span><strong className="text-white">Conformance Testing</strong> - Validate x402 spec compliance</span>
+                    </li>
+                  </ul>
+                </div>
+
+                <div>
+                  <h3 className="text-xl font-semibold text-cyan-400 mb-3">Resources</h3>
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <a href="https://github.com/youruser/x402-assured" target="_blank" rel="noreferrer" className="block rounded-lg border border-slate-700 bg-slate-800/50 p-4 hover:border-cyan-500/50 transition-colors">
+                      <div className="font-semibold text-white mb-1">GitHub Repository</div>
+                      <div className="text-sm text-slate-400">Full source code, contracts, and examples</div>
+                    </a>
+                    <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-4">
+                      <div className="font-semibold text-white mb-1">x402 Spec</div>
+                      <div className="text-sm text-slate-400">Wire-compatible with HTTP 402 protocol</div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

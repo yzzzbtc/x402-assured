@@ -58,6 +58,11 @@ export type LatencySnapshot = {
   samples: number;
 };
 
+export type MirrorInfo = {
+  url: string;
+  sig: string;
+};
+
 export type CallTranscript = {
   callId: string;
   serviceId: string;
@@ -84,6 +89,7 @@ export type CallTranscript = {
   stream?: StreamState | null;
   bond?: BondSnapshot | null;
   latency?: LatencySnapshot | null;
+  mirrors?: MirrorInfo[];
 };
 
 export type RunType = 'good' | 'bad' | 'fallback' | 'stream';
@@ -110,6 +116,9 @@ export type ConformanceChecks = {
   acceptsRetry: ConformanceCheck;
   returns200: ConformanceCheck;
   settlesWithinSLA: ConformanceCheck;
+  traceSaved?: ConformanceCheck;
+  traceValid?: ConformanceCheck;
+  mirrorSigValid?: ConformanceCheck;
 };
 
 export type ConformanceResult = {
