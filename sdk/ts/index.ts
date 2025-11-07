@@ -130,6 +130,16 @@ export class Assured402Client {
         );
       }
     }
+
+    // Enforce p95 latency maximum if policy specifies
+    if (policy.slaP95MaxMs && policy.slaP95MaxMs > 0) {
+      const p95 = await this.getServiceP95(assured.serviceId);
+      if (p95 !== null && p95 > policy.slaP95MaxMs) {
+        throw new Error(
+          `Service p95 latency ${p95}ms exceeds policy maximum ${policy.slaP95MaxMs}ms`
+        );
+      }
+    }
   }
 
   private async getReputationScore(serviceId: string): Promise<number | null> {
@@ -154,6 +164,27 @@ export class Assured402Client {
     } catch (err) {
       if (isAccountMissingError(err)) {
         return 1;
+      }
+      throw err;
+    }
+  }
+
+  private async getServiceP95(serviceId: string): Promise<number | null> {
+    const program = this.getReputationProgram();
+    if (!program) {
+      return null;
+    }
+    const [servicePda] = PublicKey.findProgramAddressSync(
+      [Buffer.from('svc'), Buffer.from(serviceId)],
+      program.programId
+    );
+    try {
+      const account = await (program.account as any).service.fetch(servicePda);
+      const p95 = Number(account.p95EstMs ?? 0);
+      return p95 > 0 ? p95 : null;
+    } catch (err) {
+      if (isAccountMissingError(err)) {
+        return null;
       }
       throw err;
     }

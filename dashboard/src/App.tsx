@@ -13,6 +13,7 @@ import type {
   ConformanceResult,
   ConformanceChecks,
 } from './types.js';
+import { verifyTrace } from '../../sdk/ts/index.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3000';
 const ESCROW_PROGRAM_ID = import.meta.env.VITE_ESCROW_PROGRAM_ID ?? '6zpAcx4Yo9MmDf4w8pBGez8bm47zyKuyjr5Y5QkC3ayL';
@@ -159,6 +160,7 @@ export default function App() {
   const [conformancePolicy, setConformancePolicy] = useState<'strict' | 'balanced' | 'cheap'>('balanced');
   const [conformanceResult, setConformanceResult] = useState<ConformanceResult | null>(null);
   const [conformanceRunning, setConformanceRunning] = useState(false);
+  const [traceVerified, setTraceVerified] = useState<boolean | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -800,6 +802,93 @@ export default function App() {
                     </div>
                   )}
                 </dl>
+                {selectedCall.trace && (
+                  <div className="mt-6">
+                    <h3 className="text-xs uppercase tracking-wide text-slate-500">Assured-Trace</h3>
+                    <dl className="mt-2 grid grid-cols-1 gap-4 text-xs">
+                      <div>
+                        <dt className="text-xs uppercase tracking-wide text-slate-500">Signature</dt>
+                        <dd className="mt-1 break-all font-mono text-[10px] text-slate-200">{selectedCall.trace.signature}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs uppercase tracking-wide text-slate-500">Signer</dt>
+                        <dd className="mt-1 break-all font-mono text-[10px] text-slate-200">{selectedCall.trace.signer}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs uppercase tracking-wide text-slate-500">Saved At</dt>
+                        <dd className="mt-1 font-mono text-[10px] text-slate-200">{new Date(selectedCall.trace.savedAt).toLocaleString()}</dd>
+                      </div>
+                    </dl>
+                    <div className="mt-4 flex items-center gap-3">
+                      <button
+                        onClick={() => {
+                          if (selectedCall.trace) {
+                            const isValid = verifyTrace(
+                              selectedCall.callId,
+                              selectedCall.trace.responseHash,
+                              selectedCall.trace.savedAt,
+                              selectedCall.trace.signature,
+                              selectedCall.trace.signer
+                            );
+                            setTraceVerified(isValid);
+                          }
+                        }}
+                        className="rounded-lg border border-blue-500/40 bg-blue-500/10 px-4 py-2 text-sm font-semibold text-blue-200 hover:bg-blue-500/20 transition-colors"
+                      >
+                        Verify Trace Signature
+                      </button>
+                      {traceVerified !== null && (
+                        <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
+                          traceVerified
+                            ? 'border border-emerald-500/40 bg-emerald-500/20 text-emerald-300'
+                            : 'border border-rose-500/40 bg-rose-500/20 text-rose-300'
+                        }`}>
+                          {traceVerified ? '✓ Valid Signature' : '✗ Invalid Signature'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {selectedCall.stream && selectedCall.stream.enabled && (
+                  <div className="mt-6">
+                    <h3 className="text-xs uppercase tracking-wide text-slate-500">Assured-Stream</h3>
+                    <div className="mt-2 text-xs text-slate-300">
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400">Progress:</span>
+                        <span className="font-semibold text-cyan-300">
+                          {selectedCall.stream.unitsReleased} / {selectedCall.stream.totalUnits} units released
+                        </span>
+                      </div>
+                      {selectedCall.stream.timeline && selectedCall.stream.timeline.length > 0 && (
+                        <div className="mt-4">
+                          <h4 className="text-xs uppercase tracking-wide text-slate-500 mb-2">Timeline</h4>
+                          <div className="space-y-2">
+                            {selectedCall.stream.timeline.map((release, idx) => (
+                              <div
+                                key={idx}
+                                className="flex items-center gap-3 rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3"
+                              >
+                                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-cyan-500/40 bg-cyan-500/20 text-xs font-bold text-cyan-300">
+                                  {release.index}
+                                </span>
+                                <div className="flex-1">
+                                  <div className="text-[11px] text-slate-400">
+                                    {new Date(release.at).toLocaleString()}
+                                  </div>
+                                  {release.txSig && (
+                                    <div className="mt-1">
+                                      <ExplorerLink signature={release.txSig} />
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {(selectedCall.webhookVerified !== null || selectedCall.webhookReceivedAt) && (
                   <div className="mt-6">
                     <h3 className="text-xs uppercase tracking-wide text-slate-500">Settlement webhook</h3>
