@@ -4,12 +4,14 @@ import { resolve } from 'path';
 import { createHash, createHmac } from 'crypto';
 
 import Fastify, { type FastifyInstance } from 'fastify';
+import cors from '@fastify/cors';
 import fastifyRawBody from 'fastify-raw-body';
-import { Connection, Keypair, PublicKey } from '@solana/web3.js';
+import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { AnchorProvider, Program, Idl } from '@coral-xyz/anchor';
 import BN from 'bn.js/lib/bn.js';
+import Ajv from 'ajv';
 
-import { Assured402Client, balanced, cheap, type Policy } from '../sdk/ts/index.ts';
+import { Assured402Client, balanced, cheap, strict, type Policy } from '../sdk/ts/index.ts';
 import type { Facilitator, PaymentProof } from '../sdk/ts/facilitators.ts';
 
 import escrowIdlJson from '../contracts/escrow/target/idl/escrow.json' assert { type: 'json' };
@@ -52,6 +54,20 @@ type RunRequestBody = {
   url?: string;
 };
 
+type CheckResult = {
+  passed: boolean;
+  detail?: string | null;
+};
+
+type StructuredChecks = {
+  has402: CheckResult;
+  validSchema: CheckResult;
+  hasAssured: CheckResult;
+  acceptsRetry: CheckResult;
+  returns200: CheckResult;
+  settlesWithinSLA: CheckResult;
+};
+
 interface SettlementManager {
   mode: 'mock' | 'onchain';
   fulfill(req: SettlementRequest): Promise<string | null>;
@@ -81,6 +97,13 @@ const HOST = process.env.HOST ?? '0.0.0.0';
 const SERVER_BASE_URL = process.env.ASSURED_BASE_URL ?? `http://127.0.0.1:${PORT}`;
 const settlementManager = createSettlementManager(config, fastify);
 const seenFulfillments = new Set<string>();
+const ajv = new Ajv({ allErrors: true, strict: false });
+const validateRequirements = ajv.compile(paymentRequirementsSchema());
+const runTimestamps: number[] = [];
+const RUN_RATE_LIMIT = { windowMs: 1000, max: 3 };
+const MIN_PROVIDER_SOL = 0.1;
+let providerBalanceLamports: number | null = null;
+let providerPublicKey: PublicKey | null = null;
 
 type CallOutcome = 'PENDING' | 'RELEASED' | 'REFUNDED';
 
@@ -98,6 +121,8 @@ interface CallTranscript {
   outcome: CallOutcome;
   evidence: Array<Record<string, unknown>>;
   scored: boolean;
+  webhookVerified?: boolean;
+  webhookReceivedAt?: number;
 }
 
 type ServiceStats = {
@@ -118,6 +143,7 @@ const pendingRequirements = new Map<string, PendingRequirement[]>();
 const callIndex = new Map<string, CallTranscript>();
 const callHistory: CallTranscript[] = [];
 const serviceStats = new Map<string, ServiceStats>();
+const seededServiceStats = buildInitialStatSeeds(config);
 
 ensureServiceStats(config.serviceIds.good);
 ensureServiceStats(config.serviceIds.bad);
@@ -127,6 +153,10 @@ await fastify.register(fastifyRawBody, {
   global: false,
   encoding: 'utf8',
   runFirst: true,
+});
+
+await fastify.register(cors, {
+  origin: true,
 });
 
 fastify.get('/api/good', async (req, reply) => {
@@ -212,6 +242,7 @@ fastify.get('/api/good_mirror', async (req, reply) => {
 
 fastify.post('/webhook/settlement', { config: { rawBody: true } }, async (req, reply) => {
   const raw = (req as typeof req & { rawBody?: string }).rawBody ?? '';
+  const payload = req.body as { callId?: string } | undefined;
   if (config.webhookSecret) {
     const provided = req.headers['x-assured-signature'];
     const expected = createHmac('sha256', config.webhookSecret)
@@ -220,6 +251,18 @@ fastify.post('/webhook/settlement', { config: { rawBody: true } }, async (req, r
     if (provided !== expected) {
       req.log.warn('invalid webhook signature');
       return reply.code(401).send({ ok: false, error: 'INVALID_SIGNATURE' });
+    }
+    if (payload?.callId) {
+      const record = callIndex.get(payload.callId);
+      if (record) {
+        record.webhookVerified = true;
+        record.webhookReceivedAt = Date.now();
+      }
+    }
+  } else if (payload?.callId) {
+    const record = callIndex.get(payload.callId);
+    if (record) {
+      record.webhookReceivedAt = Date.now();
     }
   }
 
@@ -245,6 +288,30 @@ fastify.post('/run', async (req, reply) => {
   if (!body || !body.type) {
     return reply.code(400).send({ ok: false, error: 'INVALID_REQUEST' });
   }
+  try {
+    body.url = sanitizeUserProvidedUrl(body.url);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return reply.code(400).send({ ok: false, error: 'INVALID_URL', message });
+  }
+
+  if (!consumeRunToken()) {
+    return reply
+      .code(429)
+      .send({ ok: false, error: 'RATE_LIMIT', message: 'Demo limited to 3 runs per second. Please pause and retry.' });
+  }
+
+  if (settlementManager.mode === 'onchain') {
+    const hasFunds = hasSufficientProviderBalance();
+    if (hasFunds === false) {
+      const hint = providerPublicKey
+        ? `Run \`solana airdrop 1 ${providerPublicKey.toBase58()}\` to top up.`
+        : 'Run `solana airdrop 1 <providerPubkey>` to top up the provider wallet.';
+      return reply
+        .code(503)
+        .send({ ok: false, error: 'LOW_FUNDS', message: `Provider wallet below ${MIN_PROVIDER_SOL} SOL. ${hint}` });
+    }
+  }
 
   try {
     const transcript = await executeRun(body);
@@ -253,6 +320,78 @@ fastify.post('/run', async (req, reply) => {
     req.log.error({ err, body }, 'failed to execute run');
     const message = err instanceof Error ? err.message : String(err);
     return reply.code(500).send({ ok: false, error: 'RUN_FAILED', message });
+  }
+});
+
+fastify.post('/conformance', async (req, reply) => {
+  const payload = req.body as { url?: string; policy?: string } | undefined;
+  let sanitizedUrl: string | undefined;
+  try {
+    sanitizedUrl = sanitizeUserProvidedUrl(payload?.url);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return reply.code(400).send({ ok: false, error: 'INVALID_URL', message });
+  }
+  const target = resolveRunUrl(sanitizedUrl, '/api/good');
+  const policyPreset = (payload?.policy ?? 'balanced').toLowerCase();
+
+  const checks = defaultChecks();
+  let requirements: PaymentRequirements | null = null;
+
+  try {
+    const first = await fetch(target);
+    const passed = first.status === 402;
+    checks.has402 = { passed, detail: `status=${first.status}` };
+    if (!passed) {
+      await first.text().catch(() => undefined);
+      return reply.send({ ok: false, checks });
+    }
+    requirements = (await first.json()) as PaymentRequirements;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    checks.has402 = { passed: false, detail: message };
+    return reply.send({ ok: false, checks });
+  }
+
+  const schemaValid = validateRequirements(requirements);
+  checks.validSchema = {
+    passed: Boolean(schemaValid),
+    detail: schemaValid ? undefined : ajv.errorsText(validateRequirements.errors, { separator: '\n' }),
+  };
+
+  const assuredPresent = Boolean(requirements?.assured);
+  checks.hasAssured = { passed: assuredPresent };
+
+  if (!schemaValid || !assuredPresent) {
+    return reply.send({ ok: false, checks });
+  }
+
+  const facilitator = new ConformanceFacilitator();
+  const policy = resolvePolicyPreset(policyPreset);
+  const client = new Assured402Client({ facilitator, policy });
+
+  try {
+    const response = await client.fetch(target);
+    checks.acceptsRetry = { passed: response.status !== 402, detail: `status=${response.status}` };
+    checks.returns200 = { passed: response.ok, detail: `status=${response.status}` };
+    const paymentResponse = response.headers.get('x-payment-response');
+    await response.text().catch(() => undefined);
+    const receipt = facilitator.lastProof();
+    const decodedHeader = paymentResponse ? decodeResponseHeader(paymentResponse) : null;
+    checks.settlesWithinSLA = {
+      passed: Boolean(decodedHeader?.fulfilledAt),
+      detail: decodedHeader ? `fulfilledAt=${decodedHeader.fulfilledAt ?? 'unknown'}` : 'missing header',
+    };
+    return reply.send({
+      ok: allChecksPassed(checks),
+      checks,
+      receipt,
+      paymentResponse,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    checks.acceptsRetry = { passed: false, detail: message };
+    return reply.send({ ok: false, checks });
   }
 });
 
@@ -280,6 +419,33 @@ function paymentRequirements(kind: ServiceKind): PaymentRequirements {
       altService: config.altService,
       sigAlg: 'ed25519',
     },
+  };
+}
+
+function paymentRequirementsSchema() {
+  return {
+    type: 'object',
+    required: ['price', 'currency', 'network', 'recipient', 'assured'],
+    properties: {
+      price: { type: 'string', pattern: '^[0-9]+(\\.[0-9]+)?$' },
+      currency: { type: 'string', minLength: 1 },
+      network: { type: 'string', minLength: 1 },
+      recipient: { type: 'string', minLength: 32 },
+      assured: {
+        type: 'object',
+        required: ['serviceId', 'slaMs', 'disputeWindowS', 'escrowProgram', 'sigAlg'],
+        properties: {
+          serviceId: { type: 'string', minLength: 1 },
+          slaMs: { type: 'integer', minimum: 1 },
+          disputeWindowS: { type: 'integer', minimum: 1 },
+          escrowProgram: { type: 'string', minLength: 32 },
+          altService: { type: 'string' },
+          sigAlg: { type: 'string', enum: ['ed25519'] },
+        },
+        additionalProperties: true,
+      },
+    },
+    additionalProperties: true,
   };
 }
 
@@ -347,6 +513,14 @@ function loadConfig(): ServerConfig {
   };
 }
 
+function buildInitialStatSeeds(cfg: ServerConfig) {
+  const seeds = new Map<string, Omit<ServiceStats, 'serviceId'>>();
+  if (cfg.settlementMode === 'mock') {
+    seeds.set(cfg.serviceIds.bad, { ok: 1, late: 3, disputed: 4 });
+  }
+  return seeds;
+}
+
 function expandPath(p: string, home: string): string {
   if (p.startsWith('~')) {
     return resolve(home, p.slice(1));
@@ -357,7 +531,13 @@ function expandPath(p: string, home: string): string {
 function ensureServiceStats(serviceId: string): ServiceStats {
   let stats = serviceStats.get(serviceId);
   if (!stats) {
-    stats = { serviceId, ok: 0, late: 0, disputed: 0 };
+    const seeded = seededServiceStats.get(serviceId);
+    stats = {
+      serviceId,
+      ok: seeded?.ok ?? 0,
+      late: seeded?.late ?? 0,
+      disputed: seeded?.disputed ?? 0,
+    };
     serviceStats.set(serviceId, stats);
   }
   return stats;
@@ -478,6 +658,8 @@ function serializeCall(record: CallTranscript) {
     tx: record.tx,
     outcome: record.outcome === 'PENDING' ? null : record.outcome,
     evidence: record.evidence,
+    webhookVerified: record.webhookVerified ?? null,
+    webhookReceivedAt: record.webhookReceivedAt ?? null,
   };
 }
 
@@ -507,6 +689,18 @@ function mergePolicy(base: Policy, override?: Partial<Policy>): Policy {
   return { ...base, ...(override ?? {}) };
 }
 
+function resolvePolicyPreset(preset: string): Policy {
+  switch (preset) {
+    case 'strict':
+      return strict();
+    case 'cheap':
+      return cheap();
+    case 'balanced':
+    default:
+      return balanced();
+  }
+}
+
 function resolveRunUrl(candidate: string | undefined, fallbackPath: string): string {
   if (candidate) {
     try {
@@ -516,6 +710,63 @@ function resolveRunUrl(candidate: string | undefined, fallbackPath: string): str
     }
   }
   return new URL(fallbackPath, SERVER_BASE_URL).toString();
+}
+
+function sanitizeUserProvidedUrl(candidate: string | undefined): string | undefined {
+  if (!candidate) {
+    return undefined;
+  }
+  const trimmed = candidate.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  try {
+    const base = new URL(SERVER_BASE_URL);
+    const resolved = new URL(trimmed, SERVER_BASE_URL);
+    if (resolved.origin !== base.origin) {
+      throw new Error('External URLs are not allowed');
+    }
+    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+  } catch {
+    throw new Error('Invalid URL; only same-origin paths are allowed');
+  }
+}
+
+function consumeRunToken(): boolean {
+  const now = Date.now();
+  while (runTimestamps.length && now - runTimestamps[0] > RUN_RATE_LIMIT.windowMs) {
+    runTimestamps.shift();
+  }
+  if (runTimestamps.length >= RUN_RATE_LIMIT.max) {
+    return false;
+  }
+  runTimestamps.push(now);
+  return true;
+}
+
+function hasSufficientProviderBalance(): boolean | null {
+  if (!providerPublicKey) {
+    return null;
+  }
+  if (providerBalanceLamports === null) {
+    return null;
+  }
+  return providerBalanceLamports >= MIN_PROVIDER_SOL * LAMPORTS_PER_SOL;
+}
+
+function defaultChecks(): StructuredChecks {
+  return {
+    has402: { passed: false },
+    validSchema: { passed: false },
+    hasAssured: { passed: false },
+    acceptsRetry: { passed: false },
+    returns200: { passed: false },
+    settlesWithinSLA: { passed: false },
+  };
+}
+
+function allChecksPassed(checks: StructuredChecks): boolean {
+  return Object.values(checks).every((check) => check.passed);
 }
 
 async function runStandardFlow(targetUrl: string, policy: Policy): Promise<CallTranscript> {
@@ -572,6 +823,30 @@ class ServerFacilitator implements Facilitator {
   async verifyPayment(req: PaymentRequirements): Promise<PaymentProof> {
     const serviceId = req.assured?.serviceId ?? 'unknown';
     const callId = `srv:${serviceId}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+    const txSig = `mock-${Math.random().toString(36).slice(2, 11)}`;
+    const headerValue = Buffer.from(
+      JSON.stringify({ callId, txSig, facilitator: this.name, ts: Date.now() }),
+      'utf8'
+    ).toString('base64');
+    const proof: PaymentProof = { callId, txSig, headerValue };
+    this.proof = proof;
+    return proof;
+  }
+
+  async settle(): Promise<void> {}
+
+  lastProof(): PaymentProof | undefined {
+    return this.proof;
+  }
+}
+
+class ConformanceFacilitator implements Facilitator {
+  name: 'native' = 'native';
+  private proof?: PaymentProof;
+
+  async verifyPayment(req: PaymentRequirements): Promise<PaymentProof> {
+    const serviceId = req.assured?.serviceId ?? 'unknown';
+    const callId = `conf:${serviceId}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
     const txSig = `mock-${Math.random().toString(36).slice(2, 11)}`;
     const headerValue = Buffer.from(
       JSON.stringify({ callId, txSig, facilitator: this.name, ts: Date.now() }),
@@ -651,6 +926,15 @@ function encodeResponseHeader(data: Record<string, unknown>): string {
   return Buffer.from(JSON.stringify(data), 'utf8').toString('base64');
 }
 
+function decodeResponseHeader<T = Record<string, unknown>>(header: string): T | null {
+  try {
+    const json = Buffer.from(header, 'base64').toString('utf8');
+    return JSON.parse(json) as T;
+  } catch {
+    return null;
+  }
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -690,6 +974,9 @@ function createSettlementManager(cfg: ServerConfig, instance: FastifyInstance): 
   const programId = new PublicKey(cfg.escrowProgramId);
   const idl = escrowIdlJson as Idl;
   const program = new Program(idl, programId, provider);
+  providerPublicKey = keypair.publicKey;
+  refreshProviderBalance(connection, keypair.publicKey, instance.log);
+  setInterval(() => refreshProviderBalance(connection, keypair.publicKey!, instance.log), 30_000).unref?.();
 
   log.info({ programId: programId.toBase58() }, 'assured settlement running in on-chain mode');
 
@@ -749,4 +1036,15 @@ function createWallet(keypair: Keypair) {
       });
     },
   };
+}
+
+function refreshProviderBalance(connection: Connection, pubkey: PublicKey, log: FastifyInstance['log']) {
+  connection
+    .getBalance(pubkey)
+    .then((balance) => {
+      providerBalanceLamports = balance;
+    })
+    .catch((err) => {
+      log.warn({ err }, 'failed to refresh provider balance');
+    });
 }

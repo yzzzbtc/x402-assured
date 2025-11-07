@@ -2,27 +2,20 @@
 
 **SLA escrow + disputes + on-chain reputation for x402 on Solana.**
 
-Make agent payments safe by default. x402‑Assured routes each 402 payment through a minimal Solana escrow, releases only when SLA is met and no dispute is raised, and writes outcomes to a public reputation registry that other agents can query before paying.
+Plain x402 wires funds instantly with no recourse. x402‑Assured routes every 402 payment through a Solana escrow, enforces SLAs with typed disputes, and writes outcomes to a shared reputation registry that other agents query before paying.
 
 ## Quickstart (devnet)
 
 ```bash
-# one-time: build + deploy programs (IDs from Anchor.toml)
-solana config set --url https://api.devnet.solana.com
-solana airdrop 2
-anchor build && anchor deploy --provider.cluster devnet
-
-# app dependencies
 pnpm install
 
-# run the Fastify server in one shell
+# run the Fastify server + dashboard
 pnpm dev
 
-# in another shell: spec conformance + demos
+# new terminal: spec checks + demos
 pnpm conf http://localhost:3000/api/good
-node demo/good-demo.ts
-node demo/bad-demo.ts
-node demo/fallback-demo.ts
+pnpm demo:good
+pnpm demo:bad
 ```
 
 Environment knobs (`ASSURED_*`) and settlement modes are documented in [docs/SERVER.md](docs/SERVER.md).

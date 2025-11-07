@@ -43,6 +43,27 @@
 - `POST /run`
   - Body: `{ "type": "good" | "bad" | "fallback", "policy"?: { "minReputation": number, "maxPrice": number, "requireSLA": boolean }, "url"?: string }`
   - Behaviour: drives the SDK against the requested route (or custom URL) and returns the same payload as `GET /calls/:callId`.
+  - Guardrails: rate-limited to ~3 RPS, rejects URLs outside the local origin, and (in `ASSURED_MODE=onchain`) refuses to run if the provider wallet holds <0.1 SOL (responds with an airdrop hint).
+- `POST /conformance`
+  - Body: `{ "url"?: string, "policy"?: "strict" | "balanced" | "cheap" }`
+  - Behaviour: mirrors the CLI checks server-side (ensures HTTP 402, schema conformity, assured namespace, retry acceptance, final `200 OK`, and presence of the settlement header).
+  - Response:
+    ```json
+    {
+      "ok": true,
+      "checks": {
+        "has402": { "passed": true, "detail": "status=402" },
+        "validSchema": { "passed": true },
+        "hasAssured": { "passed": true },
+        "acceptsRetry": { "passed": true, "detail": "status=200" },
+        "returns200": { "passed": true, "detail": "status=200" },
+        "settlesWithinSLA": { "passed": true, "detail": "fulfilledAt=..." }
+      },
+      "receipt": { "callId": "conf:demo:good:...", "txSig": "mock-...", "headerValue": "<base64>" },
+      "paymentResponse": "eyAiY2FsbElkIjogLi4uIH0="
+    }
+    ```
+  - Powers the dashboard conformance tester panel.
 
 ## 402 Example
 See [SPEC.md](SPEC.md). Add `assured.altService` for fallback demo.
