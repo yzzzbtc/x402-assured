@@ -1,0 +1,130 @@
+// sdk/ts/facilitators.ts
+import { randomBytes } from 'crypto';
+
+import { AnchorProvider, Idl, Program, type Wallet } from '@coral-xyz/anchor';
+import BN from 'bn.js/lib/bn.js';
+import { Connection, LAMPORTS_PER_SOL, PublicKey, SystemProgram } from '@solana/web3.js';
+
+import escrowIdlJson from '../../contracts/escrow/target/idl/escrow.json' assert { type: 'json' };
+
+export type PaymentRequirements = {
+  price: string;
+  currency: string;
+  network: string;
+  recipient: string;
+  assured?: {
+    serviceId: string;
+    slaMs: number;
+    disputeWindowS: number;
+    escrowProgram: string;
+    altService?: string;
+    sigAlg?: 'ed25519';
+  };
+};
+
+export type PaymentProof = {
+  callId: string;
+  txSig: string;
+  headerValue: string;
+};
+
+export interface Facilitator {
+  name: 'native' | 'coinbase' | 'corbits';
+  verifyPayment(req: PaymentRequirements): Promise<PaymentProof>;
+  settle?(proof: PaymentProof): Promise<void>;
+}
+
+type NativeFacilitatorParams = {
+  connection: Connection;
+  wallet: Wallet;
+  escrowProgramId: string;
+};
+
+export function nativeFacilitator({ connection, wallet, escrowProgramId }: NativeFacilitatorParams): Facilitator {
+  const provider = new AnchorProvider(connection, wallet, AnchorProvider.defaultOptions());
+  const programId = new PublicKey(escrowProgramId);
+  const program = new Program(escrowIdlJson as Idl, programId, provider);
+
+  return {
+    name: 'native',
+    async verifyPayment(req) {
+      const assured = req.assured;
+      if (!assured) {
+        throw new Error('Assured namespace is required for native facilitator payments');
+      }
+      if (assured.escrowProgram && assured.escrowProgram !== programId.toBase58()) {
+        throw new Error('Escrow program mismatch between client configuration and server requirements');
+      }
+
+      const callId = generateCallId(assured.serviceId);
+      const [escrowCall] = PublicKey.findProgramAddressSync(
+        [Buffer.from('call'), Buffer.from(callId)],
+        programId
+      );
+
+      const amount = toLamportsBN(req.price);
+      const slaMs = new BN(assured.slaMs ?? 0);
+      const disputeWindow = new BN(assured.disputeWindowS ?? 0);
+      const providerKey = new PublicKey(req.recipient);
+
+      const txSig = await program.methods
+        .initPayment(callId, assured.serviceId, amount, slaMs, disputeWindow)
+        .accounts({
+          escrowCall,
+          payer: wallet.publicKey,
+          provider: providerKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      const headerValue = encodePaymentHeader({ callId, txSig, facilitator: 'native' });
+
+      return { callId, txSig, headerValue };
+    },
+    async settle(_proof) {
+      // Native facilitator leaves settlement to the provider webhook.
+    },
+  };
+}
+
+function generateCallId(serviceId: string): string {
+  const suffix = randomBytes(6).toString('hex');
+  return `${serviceId}:${Date.now().toString(36)}:${suffix}`;
+}
+
+function encodePaymentHeader(data: Record<string, unknown>): string {
+  return Buffer.from(JSON.stringify(data), 'utf8').toString('base64');
+}
+
+function toLamportsBN(price: string): BN {
+  const trimmed = price.trim();
+  if (!/^[0-9]+(\.[0-9]+)?$/.test(trimmed)) {
+    throw new Error(`Invalid price format: ${price}`);
+  }
+  const [wholeRaw, fracRaw = ''] = trimmed.split('.');
+  const whole = BigInt(wholeRaw || '0');
+  const fractionPadded = `${fracRaw}000000000`.slice(0, 9);
+  const frac = BigInt(fractionPadded);
+  const lamports = whole * BigInt(LAMPORTS_PER_SOL) + frac;
+  return new BN(lamports.toString());
+}
+
+export function coinbaseFacilitator(_: { baseUrl: string; apiKey?: string }) : Facilitator {
+  return {
+    name: 'coinbase',
+    async verifyPayment(req) {
+      // TODO: call Coinbase facilitator
+      return { callId: 'CB_'+Date.now(), txSig: 'TODO', headerValue: 'TODO' };
+    }
+  };
+}
+
+export function corbitsFacilitator(_: { baseUrl: string; apiKey?: string }) : Facilitator {
+  return {
+    name: 'corbits',
+    async verifyPayment(req) {
+      // TODO: call Corbits facilitator
+      return { callId: 'CO_'+Date.now(), txSig: 'TODO', headerValue: 'TODO' };
+    }
+  };
+}
