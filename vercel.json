@@ -1,6 +1,6 @@
 {
   "buildCommand": "pnpm build:ui",
-  "outputDirectory": "dashboard/dist",
+  "outputDirectory": "dist",
   "installCommand": "pnpm install",
   "rewrites": [
     {
