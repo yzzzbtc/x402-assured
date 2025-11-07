@@ -9,6 +9,8 @@ import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 const escrowIdlJson = require('../../idl/escrow.json') as Idl;
+// Strip accounts field for Anchor 0.30+ compatibility
+const escrowIdl = { ...escrowIdlJson, accounts: [] } as Idl;
 
 export type PaymentRequirements = {
   price: string;
@@ -53,7 +55,7 @@ type NativeFacilitatorParams = {
 export function nativeFacilitator({ connection, wallet, escrowProgramId }: NativeFacilitatorParams): Facilitator {
   const provider = new AnchorProvider(connection, wallet, AnchorProvider.defaultOptions());
   const programId = new PublicKey(escrowProgramId);
-  const program = new (Program as any)(escrowIdlJson, programId, provider);
+  const program = new (Program as any)(escrowIdl, programId, provider);
 
   return {
     name: 'native',

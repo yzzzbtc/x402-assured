@@ -17,6 +17,9 @@ import type { Facilitator, PaymentProof } from '../sdk/ts/facilitators.ts';
 
 import escrowIdlJson from '../idl/escrow.json' assert { type: 'json' };
 
+// Strip accounts field for Anchor 0.30+ compatibility (we use PDAs directly)
+const escrowIdl = { ...escrowIdlJson, accounts: [] } as any;
+
 type ServiceKind = 'good' | 'bad';
 
 type AssuredMirror = {
@@ -1488,7 +1491,7 @@ function createSettlementManager(
   const wallet = createWallet(keypair);
   const provider = new AnchorProvider(connection, wallet, AnchorProvider.defaultOptions());
   const programId = new PublicKey(cfg.escrowProgramId);
-  const program = new (Program as any)(escrowIdlJson, programId, provider);
+  const program = new (Program as any)(escrowIdl, programId, provider);
   providerPublicKey = keypair.publicKey;
   refreshProviderBalance(connection, keypair.publicKey, instance.log);
   setInterval(() => refreshProviderBalance(connection, keypair.publicKey!, instance.log), 30_000).unref?.();
