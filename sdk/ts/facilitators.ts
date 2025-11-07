@@ -8,7 +8,7 @@ import { Connection, LAMPORTS_PER_SOL, PublicKey, SystemProgram } from '@solana/
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const escrowIdlJson = require('../../contracts/escrow/target/idl/escrow.json') as Idl;
+const escrowIdlJson = require('../../contracts/target/idl/escrow.json') as Idl;
 
 export type PaymentRequirements = {
   price: string;

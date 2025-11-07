@@ -6,7 +6,7 @@ import nacl from 'tweetnacl';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const reputationIdlJson = require('../../contracts/reputation/target/idl/reputation.json') as Idl;
+const reputationIdlJson = require('../../contracts/target/idl/reputation.json') as Idl;
 
 import type { Facilitator, PaymentRequirements } from './facilitators.ts';
 import { nativeFacilitator } from './facilitators.ts';
