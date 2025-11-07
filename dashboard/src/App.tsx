@@ -13,7 +13,7 @@ import type {
   ConformanceResult,
   ConformanceChecks,
 } from './types.js';
-import { verifyTrace, verifyMirrorSig } from '../../sdk/ts/index.js';
+import { verifyTrace, verifyMirrorSig } from './verify.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:3000';
 const ESCROW_PROGRAM_ID = import.meta.env.VITE_ESCROW_PROGRAM_ID ?? '6zpAcx4Yo9MmDf4w8pBGez8bm47zyKuyjr5Y5QkC3ayL';
