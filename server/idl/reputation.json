@@ -1,0 +1,356 @@
+{
+  "address": "8QFXHzWC1hDC7GQTNqBhsVRLURpYfXFBzT5Vb4NTxDh5",
+  "metadata": {
+    "name": "reputation",
+    "version": "0.1.0",
+    "spec": "0.1.0"
+  },
+  "instructions": [
+    {
+      "name": "bond_deposit",
+      "discriminator": [
+        140,
+        235,
+        112,
+        191,
+        153,
+        136,
+        36,
+        47
+      ],
+      "accounts": [
+        {
+          "name": "service",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  118,
+                  99
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "service_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "provider",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "service_id",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "bond_slash",
+      "discriminator": [
+        193,
+        12,
+        15,
+        23,
+        6,
+        194,
+        21,
+        125
+      ],
+      "accounts": [
+        {
+          "name": "service",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  118,
+                  99
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "service_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority"
+        },
+        {
+          "name": "recipient",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "service_id",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "bond_withdraw",
+      "discriminator": [
+        99,
+        64,
+        127,
+        178,
+        53,
+        117,
+        70,
+        204
+      ],
+      "accounts": [
+        {
+          "name": "service",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  118,
+                  99
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "service_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "provider",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "service_id",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_latency",
+      "discriminator": [
+        212,
+        67,
+        129,
+        114,
+        50,
+        245,
+        106,
+        156
+      ],
+      "accounts": [
+        {
+          "name": "service",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  118,
+                  99
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "service_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "provider",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "service_id",
+          "type": "string"
+        },
+        {
+          "name": "sample_ms",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_weighted",
+      "discriminator": [
+        0,
+        158,
+        116,
+        0,
+        100,
+        254,
+        169,
+        93
+      ],
+      "accounts": [
+        {
+          "name": "service",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  118,
+                  99
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "service_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "service_id",
+          "type": "string"
+        },
+        {
+          "name": "outcome",
+          "type": "u8"
+        },
+        {
+          "name": "weight_f32",
+          "type": "f32"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Service",
+      "discriminator": [
+        144,
+        62,
+        76,
+        129,
+        167,
+        36,
+        151,
+        250
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidOwner",
+      "msg": "Invalid owner for operation"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidAmount",
+      "msg": "Amount must be positive"
+    },
+    {
+      "code": 6002,
+      "name": "InsufficientBond",
+      "msg": "Insufficient bonded balance"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidAuthority",
+      "msg": "Invalid authority"
+    }
+  ],
+  "types": [
+    {
+      "name": "Service",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "ok",
+            "type": "f32"
+          },
+          {
+            "name": "late",
+            "type": "f32"
+          },
+          {
+            "name": "disputed",
+            "type": "f32"
+          },
+          {
+            "name": "bond_balance",
+            "type": "u64"
+          },
+          {
+            "name": "ewma_latency_ms",
+            "type": "u64"
+          },
+          {
+            "name": "p95_est_ms",
+            "type": "u64"
+          },
+          {
+            "name": "latency_samples",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

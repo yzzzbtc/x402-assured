@@ -15,7 +15,7 @@ import nacl from 'tweetnacl';
 import { Assured402Client, balanced, cheap, strict, type Policy } from '../sdk/ts/index.ts';
 import type { Facilitator, PaymentProof } from '../sdk/ts/facilitators.ts';
 
-import escrowIdlJson from '../contracts/target/idl/escrow.json' assert { type: 'json' };
+import escrowIdlJson from './idl/escrow.json' assert { type: 'json' };
 
 type ServiceKind = 'good' | 'bad';
 
