@@ -1,0 +1,418 @@
+{
+  "version": "0.1.0",
+  "name": "escrow",
+  "instructions": [
+    {
+      "name": "initPayment",
+      "accounts": [
+        {
+          "name": "escrowCall",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "payer",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "provider",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "callId",
+          "type": "string"
+        },
+        {
+          "name": "serviceId",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "slaMs",
+          "type": "u64"
+        },
+        {
+          "name": "disputeWindowS",
+          "type": "u64"
+        },
+        {
+          "name": "totalUnits",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "fulfill",
+      "accounts": [
+        {
+          "name": "escrowCall",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "provider",
+          "isMut": false,
+          "isSigner": true
+        }
+      ],
+      "args": [
+        {
+          "name": "responseHash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "ts",
+          "type": "u64"
+        },
+        {
+          "name": "providerSig",
+          "type": {
+            "vec": "u8"
+          }
+        }
+      ]
+    },
+    {
+      "name": "fulfillPartial",
+      "accounts": [
+        {
+          "name": "escrowCall",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "provider",
+          "isMut": false,
+          "isSigner": true
+        }
+      ],
+      "args": [
+        {
+          "name": "chunkHash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "units",
+          "type": "u64"
+        },
+        {
+          "name": "ts",
+          "type": "u64"
+        },
+        {
+          "name": "providerSig",
+          "type": {
+            "vec": "u8"
+          }
+        }
+      ]
+    },
+    {
+      "name": "raiseDispute",
+      "accounts": [
+        {
+          "name": "escrowCall",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "reporter",
+          "isMut": false,
+          "isSigner": true
+        }
+      ],
+      "args": [
+        {
+          "name": "kind",
+          "type": "u8"
+        },
+        {
+          "name": "reasonHash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "reporterSig",
+          "type": {
+            "vec": "u8"
+          }
+        }
+      ]
+    },
+    {
+      "name": "settle",
+      "accounts": [
+        {
+          "name": "escrowCall",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "payer",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "provider",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "escrowCall",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "callId",
+            "type": "string"
+          },
+          {
+            "name": "payer",
+            "type": "publicKey"
+          },
+          {
+            "name": "serviceId",
+            "type": "string"
+          },
+          {
+            "name": "provider",
+            "type": "publicKey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "startTs",
+            "type": "u64"
+          },
+          {
+            "name": "slaMs",
+            "type": "u64"
+          },
+          {
+            "name": "disputeWindowS",
+            "type": "u64"
+          },
+          {
+            "name": "status",
+            "type": "u8"
+          },
+          {
+            "name": "deliveredTs",
+            "type": {
+              "option": "u64"
+            }
+          },
+          {
+            "name": "responseHash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "disputed",
+            "type": "bool"
+          },
+          {
+            "name": "totalUnits",
+            "type": "u64"
+          },
+          {
+            "name": "unitsReleased",
+            "type": "u64"
+          },
+          {
+            "name": "providerSig",
+            "type": {
+              "vec": "u8"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "Fulfilled",
+      "fields": [
+        {
+          "name": "callId",
+          "type": "string",
+          "index": false
+        },
+        {
+          "name": "ts",
+          "type": "u64",
+          "index": false
+        }
+      ]
+    },
+    {
+      "name": "Released",
+      "fields": [
+        {
+          "name": "callId",
+          "type": "string",
+          "index": false
+        }
+      ]
+    },
+    {
+      "name": "Refunded",
+      "fields": [
+        {
+          "name": "callId",
+          "type": "string",
+          "index": false
+        }
+      ]
+    },
+    {
+      "name": "Disputed",
+      "fields": [
+        {
+          "name": "callId",
+          "type": "string",
+          "index": false
+        },
+        {
+          "name": "kind",
+          "type": "u8",
+          "index": false
+        },
+        {
+          "name": "reasonHash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          },
+          "index": false
+        }
+      ]
+    },
+    {
+      "name": "PartialReleased",
+      "fields": [
+        {
+          "name": "callId",
+          "type": "string",
+          "index": false
+        },
+        {
+          "name": "units",
+          "type": "u64",
+          "index": false
+        },
+        {
+          "name": "totalUnits",
+          "type": "u64",
+          "index": false
+        }
+      ]
+    },
+    {
+      "name": "TraceSaved",
+      "fields": [
+        {
+          "name": "callId",
+          "type": "string",
+          "index": false
+        },
+        {
+          "name": "responseHash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          },
+          "index": false
+        },
+        {
+          "name": "providerSig",
+          "type": {
+            "vec": "u8"
+          },
+          "index": false
+        }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidStatus",
+      "msg": "Invalid status"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidProvider",
+      "msg": "Invalid provider"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidPayer",
+      "msg": "Invalid payer"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidReporter",
+      "msg": "Invalid reporter"
+    },
+    {
+      "code": 6004,
+      "name": "EscrowBalanceLow",
+      "msg": "Escrow account underfunded"
+    },
+    {
+      "code": 6005,
+      "name": "SignatureTooLong",
+      "msg": "Provider signature too long"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidUnits",
+      "msg": "Invalid units for partial release"
+    }
+  ],
+  "metadata": {
+    "address": "6zpAcx4Yo9MmDf4w8pBGez8bm47zyKuyjr5Y5QkC3ayL"
+  }
+}

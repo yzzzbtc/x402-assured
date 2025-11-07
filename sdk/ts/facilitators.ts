@@ -23,6 +23,8 @@ export type PaymentRequirements = {
     escrowProgram: string;
     altService?: string;
     sigAlg?: 'ed25519';
+    stream?: boolean;
+    totalUnits?: number;
   };
 };
 
@@ -70,9 +72,10 @@ export function nativeFacilitator({ connection, wallet, escrowProgramId }: Nativ
       const slaMs = new BN(assured.slaMs ?? 0);
       const disputeWindow = new BN(assured.disputeWindowS ?? 0);
       const providerKey = new PublicKey(req.recipient);
+      const totalUnits = new BN(Math.max(1, assured.totalUnits ?? 1));
 
       const txSig = await program.methods
-        .initPayment(callId, assured.serviceId, amount, slaMs, disputeWindow)
+        .initPayment(callId, assured.serviceId, amount, slaMs, disputeWindow, totalUnits)
         .accounts({
           escrowCall,
           payer: wallet.publicKey,

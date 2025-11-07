@@ -1,0 +1,9 @@
+[workspace]
+members = [
+    "escrow",
+    "reputation"
+]
+resolver = "2"
+
+[profile.release]
+overflow-checks = true

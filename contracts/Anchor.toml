@@ -1,0 +1,22 @@
+[toolchain]
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.devnet]
+escrow = "6zpAcx4Yo9MmDf4w8pBGez8bm47zyKuyjr5Y5QkC3ayL"
+reputation = "8QFXHzWC1hDC7GQTNqBhsVRLURpYfXFBzT5Vb4NTxDh5"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/id.json"
+
+[workspace]
+members = ["escrow", "reputation"]
+
+[scripts]
+test = "cargo test --workspace"
