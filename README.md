@@ -9,7 +9,8 @@
 
 ## 🚀 Live Demo
 
-**Dashboard:** [https://x402-assured.vercel.app](https://x402-assured.vercel.app) *(link will be updated after deployment)*
+**Dashboard:** [https://x402-assured.vercel.app](https://x402-assured.vercel.app)
+**Backend API:** [https://x402-assured-production.up.railway.app](https://x402-assured-production.up.railway.app)
 
 Try the interactive demo to see all 5 features in action:
 - View provider reputation scores with bond status and P95 latency
@@ -327,7 +328,9 @@ This project was built for the Solana x402 Hackathon. Contributions, issues, and
 
 ## 🔗 Links
 
-- **Live Demo:** [https://x402-assured.vercel.app](https://x402-assured.vercel.app)
+- **Live Dashboard:** [https://x402-assured.vercel.app](https://x402-assured.vercel.app)
+- **Backend API:** [https://x402-assured-production.up.railway.app](https://x402-assured-production.up.railway.app)
+- **GitHub Repository:** [https://github.com/yzzzbtc/x402-assured](https://github.com/yzzzbtc/x402-assured)
 - **Solana Explorer (Devnet):** [View Contracts](https://solscan.io/account/6zpAcx4Yo9MmDf4w8pBGez8bm47zyKuyjr5Y5QkC3ayL?cluster=devnet)
 - **x402 Spec:** [HTTP 402 Payment Required Protocol](https://github.com/getAlby/402)
 
