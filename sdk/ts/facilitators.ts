@@ -1,11 +1,15 @@
 // sdk/ts/facilitators.ts
 import { randomBytes } from 'crypto';
 
-import { AnchorProvider, Idl, Program, type Wallet } from '@coral-xyz/anchor';
+import type { Idl, Wallet } from '@coral-xyz/anchor';
+import anchor from '@coral-xyz/anchor';
 import BN from 'bn.js/lib/bn.js';
 import { Connection, LAMPORTS_PER_SOL, PublicKey, SystemProgram } from '@solana/web3.js';
+import { createRequire } from 'module';
 
-import escrowIdlJson from '../../contracts/escrow/target/idl/escrow.json' assert { type: 'json' };
+const require = createRequire(import.meta.url);
+const escrowIdlJson = require('../../contracts/escrow/target/idl/escrow.json') as Idl;
+const { AnchorProvider, Program } = anchor as typeof import('@coral-xyz/anchor');
 
 export type PaymentRequirements = {
   price: string;
@@ -43,7 +47,7 @@ type NativeFacilitatorParams = {
 export function nativeFacilitator({ connection, wallet, escrowProgramId }: NativeFacilitatorParams): Facilitator {
   const provider = new AnchorProvider(connection, wallet, AnchorProvider.defaultOptions());
   const programId = new PublicKey(escrowProgramId);
-  const program = new Program(escrowIdlJson as Idl, programId, provider);
+  const program = new Program(escrowIdlJson, programId, provider);
 
   return {
     name: 'native',

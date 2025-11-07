@@ -103,6 +103,31 @@ fastify.get('/api/bad', async (req, reply) => {
   return reply.code(503).send({ ok: false, error: 'SLA_MISSED' });
 });
 
+fastify.get('/api/good_mirror', async (req, reply) => {
+  const receipt = extractReceipt(req.headers['x-payment']);
+  if (!receipt) {
+    const base = paymentRequirements('good');
+    return reply.code(402).send({
+      ...base,
+      assured: {
+        ...base.assured,
+        serviceId: `${base.assured.serviceId}:mirror`,
+      },
+    });
+  }
+
+  const payload = { ok: true, data: { hello: 'world', source: 'alt-service' } };
+
+  try {
+    const header = await finalizeSettlement('good', receipt, payload);
+    reply.header('x-payment-response', header);
+    return payload;
+  } catch (err) {
+    req.log.error({ err, receipt }, 'failed to fulfill escrow call (alt)');
+    return reply.code(502).send({ ok: false, error: 'FULFILL_FAILED' });
+  }
+});
+
 fastify.post('/webhook/settlement', { config: { rawBody: true } }, async (req, reply) => {
   const raw = (req as typeof req & { rawBody?: string }).rawBody ?? '';
   if (config.webhookSecret) {

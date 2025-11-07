@@ -1,10 +1,15 @@
 // sdk/ts/index.ts
-import { AnchorProvider, Idl, Program, type Wallet } from '@coral-xyz/anchor';
+import type { Idl, Wallet } from '@coral-xyz/anchor';
+import anchor from '@coral-xyz/anchor';
 import { Connection, Keypair, PublicKey } from '@solana/web3.js';
+import { createRequire } from 'module';
 
-import reputationIdlJson from '../../contracts/reputation/target/idl/reputation.json' assert { type: 'json' };
+const require = createRequire(import.meta.url);
+const reputationIdlJson = require('../../contracts/reputation/target/idl/reputation.json') as Idl;
+const { AnchorProvider, Program } = anchor as typeof import('@coral-xyz/anchor');
 
-import { Facilitator, PaymentRequirements, nativeFacilitator } from './facilitators';
+import type { Facilitator, PaymentRequirements } from './facilitators.ts';
+import { nativeFacilitator } from './facilitators.ts';
 
 export type Policy = { minReputation: number; maxPrice: number; requireSLA: boolean };
 
@@ -30,8 +35,11 @@ export class Assured402Client {
   private facilitatorInstance?: Facilitator;
   private reputationProgram?: Program;
   private readOnlyWallet?: Wallet;
+  private opts: Assured402ClientOptions;
 
-  constructor(private opts: Assured402ClientOptions = {}) {}
+  constructor(opts: Assured402ClientOptions = {}) {
+    this.opts = opts;
+  }
 
   async fetch(url: string, overridePolicy?: PolicyOverride): Promise<Response> {
     const policy = this.resolvePolicy(overridePolicy);
@@ -147,7 +155,7 @@ export class Assured402Client {
     }
     const programId = new PublicKey(this.opts.reputationProgramId ?? DEFAULT_REPUTATION_PROGRAM_ID);
     const provider = new AnchorProvider(connection, this.getReadOnlyWallet(), AnchorProvider.defaultOptions());
-    this.reputationProgram = new Program(reputationIdlJson as Idl, programId, provider);
+    this.reputationProgram = new Program(reputationIdlJson, programId, provider);
     return this.reputationProgram;
   }
 
