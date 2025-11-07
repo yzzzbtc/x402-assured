@@ -17,8 +17,20 @@ import type { Facilitator, PaymentProof } from '../sdk/ts/facilitators.ts';
 
 import escrowIdlJson from '../idl/escrow.json' assert { type: 'json' };
 
-// Strip accounts field for Anchor 0.30+ compatibility (we use PDAs directly)
-const escrowIdl = { ...escrowIdlJson, accounts: [] } as any;
+// Reconstruct accounts field with proper type references for Anchor 0.30+
+const escrowIdl = {
+  ...escrowIdlJson,
+  accounts: [
+    {
+      name: 'EscrowCall',
+      discriminator: [254, 3, 166, 184, 14, 28, 141, 36],
+      type: {
+        kind: 'struct',
+        fields: escrowIdlJson.types?.find((t: any) => t.name === 'EscrowCall')?.type?.fields || []
+      }
+    }
+  ]
+} as any;
 
 type ServiceKind = 'good' | 'bad';
 
