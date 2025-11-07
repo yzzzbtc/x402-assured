@@ -2,7 +2,6 @@
   "buildCommand": "pnpm build:ui",
   "outputDirectory": "dashboard/dist",
   "installCommand": "pnpm install",
-  "framework": "vite",
   "rewrites": [
     {
       "source": "/(.*)",
