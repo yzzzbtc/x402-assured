@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": false,
+    "types": [
+      "node",
+      "vite/client"
+    ],
+    "baseUrl": ".",
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "server/**/*.ts",
+    "sdk/**/*.ts",
+    "tools/**/*.ts",
+    "demo/**/*.ts",
+    "dashboard/src/**/*.ts",
+    "dashboard/src/**/*.tsx",
+    "types/**/*.d.ts"
+  ]
+}

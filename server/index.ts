@@ -10,6 +10,7 @@ import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.j
 import { AnchorProvider, Program, Idl } from '@coral-xyz/anchor';
 import BN from 'bn.js/lib/bn.js';
 import Ajv from 'ajv';
+import nacl from 'tweetnacl';
 
 import { Assured402Client, balanced, cheap, strict, type Policy } from '../sdk/ts/index.ts';
 import type { Facilitator, PaymentProof } from '../sdk/ts/facilitators.ts';
@@ -17,6 +18,11 @@ import type { Facilitator, PaymentProof } from '../sdk/ts/facilitators.ts';
 import escrowIdlJson from '../contracts/escrow/target/idl/escrow.json' assert { type: 'json' };
 
 type ServiceKind = 'good' | 'bad';
+
+type AssuredMirror = {
+  url: string;
+  sig: string;
+};
 
 type PaymentRequirements = {
   price: string;
@@ -30,6 +36,13 @@ type PaymentRequirements = {
     escrowProgram: string;
     altService?: string;
     sigAlg: 'ed25519';
+    reputationProgram?: string;
+    stream?: boolean;
+    totalUnits?: number;
+    mirrors?: AssuredMirror[];
+    hasBond?: boolean;
+    bondBalance?: string;
+    slaP95Ms?: number;
   };
 };
 
@@ -41,12 +54,20 @@ type PaymentReceipt = {
 
 type SettlementRequest = {
   callId: string;
-  txSig?: string;
   responseHash: Uint8Array;
   deliveredAt: number;
+  signature?: string;
 };
 
-type RunType = 'good' | 'bad' | 'fallback';
+type PartialSettlementRequest = {
+  callId: string;
+  chunkHash: Uint8Array;
+  units: number;
+  deliveredAt: number;
+  signature?: string;
+};
+
+type RunType = 'good' | 'bad' | 'fallback' | 'stream';
 
 type RunRequestBody = {
   type: RunType;
@@ -66,11 +87,60 @@ type StructuredChecks = {
   acceptsRetry: CheckResult;
   returns200: CheckResult;
   settlesWithinSLA: CheckResult;
+  traceSaved?: CheckResult;
+  traceValid?: CheckResult;
+  mirrorSigValid?: CheckResult;
+};
+
+type StreamChunk = {
+  index: number;
+  units: number;
+  cumulativeUnits: number;
+  hash?: string;
+  signature?: string | null;
+  signer?: string | null;
+  tx?: string | null;
+  at: number;
+  payload?: Record<string, unknown>;
+};
+
+type StreamState = {
+  enabled: boolean;
+  totalUnits: number;
+  unitsReleased: number;
+  chunks: StreamChunk[];
+};
+
+type TraceInfo = {
+  responseHash?: string;
+  signature?: string | null;
+  signer?: string | null;
+  message?: string;
+  savedAt?: number;
+};
+
+type BondInfo = {
+  hasBond: boolean;
+  balanceLamports: number;
+  display: string;
+};
+
+type LatencyInfo = {
+  ewmaMs: number;
+  p95Ms: number;
+  samples: number;
+};
+
+type TraceAuthority = {
+  keypair: Keypair;
+  publicKey: string;
+  sign(message: Uint8Array): string;
 };
 
 interface SettlementManager {
   mode: 'mock' | 'onchain';
   fulfill(req: SettlementRequest): Promise<string | null>;
+  fulfillPartial(req: PartialSettlementRequest): Promise<string | null>;
 }
 
 interface ServerConfig {
@@ -84,6 +154,7 @@ interface ServerConfig {
   sla: Record<ServiceKind, number>;
   disputeWindow: number;
   serviceIds: Record<ServiceKind, string>;
+  streamServiceId: string;
   webhookSecret?: string;
   settlementMode: 'mock' | 'onchain';
   providerKeypairPath?: string;
@@ -95,15 +166,18 @@ const config = loadConfig();
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? '0.0.0.0';
 const SERVER_BASE_URL = process.env.ASSURED_BASE_URL ?? `http://127.0.0.1:${PORT}`;
-const settlementManager = createSettlementManager(config, fastify);
-const seenFulfillments = new Set<string>();
-const ajv = new Ajv({ allErrors: true, strict: false });
-const validateRequirements = ajv.compile(paymentRequirementsSchema());
 const runTimestamps: number[] = [];
 const RUN_RATE_LIMIT = { windowMs: 1000, max: 3 };
 const MIN_PROVIDER_SOL = 0.1;
 let providerBalanceLamports: number | null = null;
 let providerPublicKey: PublicKey | null = null;
+const providerAuthority = loadKeypair(config.providerKeypairPath);
+const traceSigner = createTraceSigner(providerAuthority);
+providerPublicKey = traceSigner.keypair.publicKey;
+const settlementManager = createSettlementManager(config, fastify, providerAuthority);
+const seenFulfillments = new Set<string>();
+const ajv = new Ajv({ allErrors: true, strict: false });
+const validateRequirements = ajv.compile(paymentRequirementsSchema());
 
 type CallOutcome = 'PENDING' | 'RELEASED' | 'REFUNDED';
 
@@ -123,6 +197,10 @@ interface CallTranscript {
   scored: boolean;
   webhookVerified?: boolean;
   webhookReceivedAt?: number;
+  trace: TraceInfo;
+  stream?: StreamState;
+  bond?: BondInfo;
+  latency?: LatencyInfo;
 }
 
 type ServiceStats = {
@@ -130,6 +208,11 @@ type ServiceStats = {
   ok: number;
   late: number;
   disputed: number;
+  hasBond: boolean;
+  bondLamports: number;
+  ewmaLatencyMs: number;
+  p95LatencyMs: number;
+  latencySamples: number;
 };
 
 type PendingRequirement = {
@@ -139,6 +222,7 @@ type PendingRequirement = {
 };
 
 const RECENT_LIMIT = 50;
+const STREAM_TOTAL_UNITS = 3;
 const pendingRequirements = new Map<string, PendingRequirement[]>();
 const callIndex = new Map<string, CallTranscript>();
 const callHistory: CallTranscript[] = [];
@@ -147,6 +231,7 @@ const seededServiceStats = buildInitialStatSeeds(config);
 
 ensureServiceStats(config.serviceIds.good);
 ensureServiceStats(config.serviceIds.bad);
+ensureServiceStats(config.streamServiceId);
 
 await fastify.register(fastifyRawBody, {
   field: 'rawBody',
@@ -181,6 +266,144 @@ fastify.get('/api/good', async (req, reply) => {
   }
 });
 
+fastify.get('/api/good_stream', async (req, reply) => {
+  const serviceId = config.streamServiceId;
+  const headerValue = typeof req.headers['x-payment'] === 'string' ? req.headers['x-payment'] : undefined;
+  const receipt = extractReceipt(headerValue);
+  if (!receipt) {
+    const requirements = paymentRequirements('good');
+    requirements.assured.serviceId = serviceId;
+    requirements.assured.stream = true;
+    requirements.assured.totalUnits = STREAM_TOTAL_UNITS;
+    requirements.assured.mirrors = config.altService
+      ? [buildMirrorDescriptor(serviceId, config.altService)]
+      : undefined;
+    const streamBond = deriveBondSnapshot(serviceId);
+    const streamLatency = deriveLatencySnapshot(serviceId);
+    requirements.assured.hasBond = streamBond.hasBond;
+    requirements.assured.bondBalance = streamBond.display;
+    requirements.assured.slaP95Ms = streamLatency.p95Ms || undefined;
+    recordPaymentRequirement(requirements);
+    return reply.code(402).send(requirements);
+  }
+
+  const record = hydrateCallRecord(serviceId, receipt.callId, {
+    headerValue,
+    txSig: receipt.txSig,
+  });
+  const streamState = ensureStreamState(record, STREAM_TOTAL_UNITS);
+  record.bond = deriveBondSnapshot(serviceId);
+  record.latency = deriveLatencySnapshot(serviceId);
+
+  if (seenFulfillments.has(receipt.callId) && streamState.unitsReleased >= streamState.totalUnits) {
+    const fulfilledAt = record.trace.savedAt ?? record.startedAt;
+    const headerPayload = {
+      callId: receipt.callId,
+      responseHash: record.responseHash,
+      fulfilledAt,
+      mode: settlementManager.mode,
+      partials: streamState.chunks.length,
+    };
+    reply.header('x-payment-response', encodeResponseHeader(headerPayload));
+    const existingTimeline = streamState.chunks.map((chunk) => chunk.payload ?? { index: chunk.index, units: chunk.units });
+    return {
+      ok: true,
+      stream: {
+        totalUnits: streamState.totalUnits,
+        unitsReleased: streamState.unitsReleased,
+        segments: existingTimeline,
+      },
+    };
+  }
+
+  let cumulativeUnits = streamState.unitsReleased ?? 0;
+  const segments = buildStreamSegments();
+
+  for (const segment of segments) {
+    const chunkPayload = {
+      index: streamState.chunks.length + 1,
+      ...segment.payload,
+    };
+
+    const chunkJson = JSON.stringify(chunkPayload);
+    const chunkHash = createHash('sha256').update(chunkJson).digest();
+    const chunkHashHex = Buffer.from(chunkHash).toString('hex');
+    const deliveredAt = Date.now();
+    const message = buildTraceMessage(receipt.callId, chunkHashHex, deliveredAt);
+    const signature = traceSigner.sign(message);
+
+    let txSig: string | null = null;
+    const partialRequest = {
+      callId: receipt.callId,
+      chunkHash: new Uint8Array(chunkHash),
+      units: segment.units,
+      deliveredAt,
+      signature,
+    };
+    if (settlementManager.mode === 'onchain') {
+      txSig = await settlementManager.fulfillPartial(partialRequest);
+    } else {
+      await settlementManager.fulfillPartial(partialRequest);
+    }
+
+    cumulativeUnits += segment.units;
+    const chunkRecord: StreamChunk = {
+      index: streamState.chunks.length + 1,
+      units: segment.units,
+      cumulativeUnits,
+      hash: chunkHashHex,
+      signature,
+      signer: traceSigner.publicKey,
+      tx: txSig ?? null,
+      at: deliveredAt,
+      payload: chunkPayload,
+    };
+    streamState.chunks.push(chunkRecord);
+    streamState.unitsReleased = cumulativeUnits;
+
+    record.trace = {
+      responseHash: chunkHashHex,
+      signature,
+      signer: traceSigner.publicKey,
+      message: Buffer.from(message).toString('utf8'),
+      savedAt: deliveredAt,
+    };
+    record.responseHash = chunkHashHex;
+    if (txSig) {
+      record.tx.fulfill = txSig;
+    }
+
+    if (segment.delayMs) {
+      await sleep(segment.delayMs);
+    }
+  }
+
+  updateOutcome(record, 'RELEASED');
+  record.bond = deriveBondSnapshot(serviceId);
+  record.latency = deriveLatencySnapshot(serviceId);
+  seenFulfillments.add(receipt.callId);
+
+  const fulfilledAt = record.trace.savedAt ?? Date.now();
+  const headerPayload = {
+    callId: receipt.callId,
+    responseHash: record.responseHash,
+    fulfilledAt,
+    mode: settlementManager.mode,
+    partials: streamState.chunks.length,
+  };
+  reply.header('x-payment-response', encodeResponseHeader(headerPayload));
+
+  const payload = {
+    ok: true,
+    stream: {
+      totalUnits: streamState.totalUnits,
+      unitsReleased: streamState.unitsReleased,
+      segments: streamState.chunks.map((chunk) => chunk.payload ?? { index: chunk.index, units: chunk.units }),
+    },
+  };
+  return payload;
+});
+
 fastify.get('/api/bad', async (req, reply) => {
   const serviceId = config.serviceIds.bad;
   const headerValue = typeof req.headers['x-payment'] === 'string' ? req.headers['x-payment'] : undefined;
@@ -207,6 +430,18 @@ fastify.get('/api/bad', async (req, reply) => {
     actualMs: Date.now() - record.startedAt,
   });
   updateOutcome(record, 'REFUNDED');
+  const slashAmount = Math.round(0.1 * LAMPORTS_PER_SOL);
+  applyBondSlash(serviceId, slashAmount);
+  record.bond = deriveBondSnapshot(serviceId);
+  record.latency = deriveLatencySnapshot(serviceId);
+  record.trace = {
+    responseHash: hash,
+    signature: null,
+    signer: null,
+    message: 'sla-missed',
+    savedAt: Date.now(),
+  };
+  record.evidence.push({ type: 'BOND_SLASH', amountLamports: slashAmount });
 
   return reply.code(503).send(payload);
 });
@@ -216,14 +451,7 @@ fastify.get('/api/good_mirror', async (req, reply) => {
   const headerValue = typeof req.headers['x-payment'] === 'string' ? req.headers['x-payment'] : undefined;
   const receipt = extractReceipt(headerValue);
   if (!receipt) {
-    const base = paymentRequirements('good');
-    const requirements: PaymentRequirements = {
-      ...base,
-      assured: {
-        ...base.assured,
-        serviceId,
-      },
-    };
+    const requirements = deriveRequirementsForService(serviceId);
     recordPaymentRequirement(requirements);
     return reply.code(402).send(requirements);
   }
@@ -382,6 +610,63 @@ fastify.post('/conformance', async (req, reply) => {
       passed: Boolean(decodedHeader?.fulfilledAt),
       detail: decodedHeader ? `fulfilledAt=${decodedHeader.fulfilledAt ?? 'unknown'}` : 'missing header',
     };
+    let transcript: CallTranscript | null = null;
+    if (receipt) {
+      try {
+        transcript = await waitForCallRecord(receipt.callId);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        checks.traceSaved = { passed: false, detail: message };
+      }
+    }
+
+    if (transcript) {
+      const traceInfo = transcript.trace;
+      if (traceInfo?.responseHash) {
+        checks.traceSaved = { passed: true };
+        const savedAt = traceInfo.savedAt ?? (typeof decodedHeader?.fulfilledAt === 'number' ? decodedHeader.fulfilledAt : Date.now());
+        const traceMessage = buildTraceMessage(transcript.callId, traceInfo.responseHash, savedAt);
+        const traceOk = verifySignature(
+          traceMessage,
+          traceInfo.signature ?? null,
+          traceInfo.signer ?? traceSigner.publicKey
+        );
+        checks.traceValid = traceOk
+          ? { passed: true }
+          : { passed: false, detail: 'trace signature invalid' };
+      } else {
+        checks.traceSaved = { passed: false, detail: 'missing trace hash' };
+        checks.traceValid = { passed: false, detail: 'no trace signature' };
+      }
+
+      const mirrors = transcript.paymentRequirements.assured?.mirrors ?? [];
+      if (mirrors.length > 0) {
+        const signerPk = traceInfo?.signer ?? traceSigner.publicKey;
+        const allValid = mirrors.every((mirror) =>
+          verifySignature(
+            buildMirrorMessage(transcript.paymentRequirements.assured.serviceId, mirror.url),
+            mirror.sig,
+            signerPk
+          )
+        );
+        checks.mirrorSigValid = allValid
+          ? { passed: true }
+          : { passed: false, detail: 'mirror signature invalid' };
+      } else if (!checks.mirrorSigValid) {
+        checks.mirrorSigValid = { passed: true };
+      }
+    } else {
+      if (!checks.traceSaved) {
+        checks.traceSaved = { passed: false, detail: 'transcript unavailable' };
+      }
+      if (!checks.traceValid) {
+        checks.traceValid = { passed: false, detail: 'transcript unavailable' };
+      }
+      if (!checks.mirrorSigValid) {
+        checks.mirrorSigValid = { passed: true };
+      }
+    }
+
     return reply.send({
       ok: allChecksPassed(checks),
       checks,
@@ -406,18 +691,28 @@ fastify
   });
 
 function paymentRequirements(kind: ServiceKind): PaymentRequirements {
+  const serviceId = config.serviceIds[kind];
+  const bond = deriveBondSnapshot(serviceId);
+  const latency = deriveLatencySnapshot(serviceId);
+  const mirrors = config.altService ? [buildMirrorDescriptor(serviceId, config.altService)] : undefined;
   return {
     price: config.price,
     currency: config.currency,
     network: config.network,
     recipient: config.recipient,
     assured: {
-      serviceId: config.serviceIds[kind],
+      serviceId,
       slaMs: config.sla[kind],
       disputeWindowS: config.disputeWindow,
       escrowProgram: config.escrowProgramId,
+      reputationProgram: config.reputationProgramId,
       altService: config.altService,
       sigAlg: 'ed25519',
+      stream: false,
+      hasBond: bond.hasBond,
+      bondBalance: bond.display,
+      slaP95Ms: latency.p95Ms || undefined,
+      mirrors,
     },
   };
 }
@@ -433,7 +728,7 @@ function paymentRequirementsSchema() {
       recipient: { type: 'string', minLength: 32 },
       assured: {
         type: 'object',
-        required: ['serviceId', 'slaMs', 'disputeWindowS', 'escrowProgram', 'sigAlg'],
+        required: ['serviceId', 'slaMs', 'disputeWindowS', 'escrowProgram', 'sigAlg', 'stream'],
         properties: {
           serviceId: { type: 'string', minLength: 1 },
           slaMs: { type: 'integer', minimum: 1 },
@@ -441,6 +736,24 @@ function paymentRequirementsSchema() {
           escrowProgram: { type: 'string', minLength: 32 },
           altService: { type: 'string' },
           sigAlg: { type: 'string', enum: ['ed25519'] },
+          reputationProgram: { type: 'string', minLength: 32 },
+          stream: { type: 'boolean' },
+          totalUnits: { type: 'integer', minimum: 1 },
+          mirrors: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['url', 'sig'],
+              properties: {
+                url: { type: 'string', minLength: 1 },
+                sig: { type: 'string', minLength: 1 },
+              },
+              additionalProperties: false,
+            },
+          },
+          hasBond: { type: 'boolean' },
+          bondBalance: { type: 'string' },
+          slaP95Ms: { type: 'integer', minimum: 1 },
         },
         additionalProperties: true,
       },
@@ -506,6 +819,7 @@ function loadConfig(): ServerConfig {
       good: process.env.ASSURED_GOOD_SERVICE_ID ?? 'demo:good',
       bad: process.env.ASSURED_BAD_SERVICE_ID ?? 'demo:bad',
     },
+    streamServiceId: process.env.ASSURED_STREAM_SERVICE_ID ?? 'demo:good_stream',
     webhookSecret: process.env.ASSURED_WEBHOOK_SECRET,
     settlementMode,
     providerKeypairPath: providerPath,
@@ -515,8 +829,37 @@ function loadConfig(): ServerConfig {
 
 function buildInitialStatSeeds(cfg: ServerConfig) {
   const seeds = new Map<string, Omit<ServiceStats, 'serviceId'>>();
+  seeds.set(cfg.serviceIds.good, {
+    ok: 12,
+    late: 0,
+    disputed: 1,
+    hasBond: true,
+    bondLamports: Math.round(1.2 * LAMPORTS_PER_SOL),
+    ewmaLatencyMs: 850,
+    p95LatencyMs: 1200,
+    latencySamples: 48,
+  });
+  seeds.set(cfg.streamServiceId, {
+    ok: 8,
+    late: 0,
+    disputed: 0,
+    hasBond: true,
+    bondLamports: Math.round(1.5 * LAMPORTS_PER_SOL),
+    ewmaLatencyMs: 900,
+    p95LatencyMs: 1100,
+    latencySamples: 24,
+  });
   if (cfg.settlementMode === 'mock') {
-    seeds.set(cfg.serviceIds.bad, { ok: 1, late: 3, disputed: 4 });
+    seeds.set(cfg.serviceIds.bad, {
+      ok: 1,
+      late: 3,
+      disputed: 4,
+      hasBond: true,
+      bondLamports: Math.round(0.5 * LAMPORTS_PER_SOL),
+      ewmaLatencyMs: 1500,
+      p95LatencyMs: 2200,
+      latencySamples: 12,
+    });
   }
   return seeds;
 }
@@ -537,10 +880,128 @@ function ensureServiceStats(serviceId: string): ServiceStats {
       ok: seeded?.ok ?? 0,
       late: seeded?.late ?? 0,
       disputed: seeded?.disputed ?? 0,
+      hasBond: seeded?.hasBond ?? false,
+      bondLamports: seeded?.bondLamports ?? 0,
+      ewmaLatencyMs: seeded?.ewmaLatencyMs ?? 0,
+      p95LatencyMs: seeded?.p95LatencyMs ?? 0,
+      latencySamples: seeded?.latencySamples ?? 0,
     };
     serviceStats.set(serviceId, stats);
   }
   return stats;
+}
+
+function deriveBondSnapshot(serviceId: string): BondInfo {
+  const stats = ensureServiceStats(serviceId);
+  const display = (stats.bondLamports / LAMPORTS_PER_SOL).toFixed(2);
+  return {
+    hasBond: stats.hasBond,
+    balanceLamports: stats.bondLamports,
+    display,
+  };
+}
+
+function deriveLatencySnapshot(serviceId: string): LatencyInfo {
+  const stats = ensureServiceStats(serviceId);
+  return {
+    ewmaMs: stats.ewmaLatencyMs,
+    p95Ms: stats.p95LatencyMs,
+    samples: stats.latencySamples,
+  };
+}
+
+function buildMirrorMessage(serviceId: string, url: string): Uint8Array {
+  const encoder = new TextEncoder();
+  return encoder.encode(`assured-mirror|${serviceId}|${url}`);
+}
+
+function buildMirrorDescriptor(serviceId: string, url: string): AssuredMirror {
+  const message = buildMirrorMessage(serviceId, url);
+  const sig = traceSigner.sign(message);
+  return { url, sig };
+}
+
+function buildTraceMessage(callId: string, responseHashHex: string, deliveredAt: number): Uint8Array {
+  const encoder = new TextEncoder();
+  return encoder.encode(`assured-trace|${callId}|${responseHashHex}|${deliveredAt}`);
+}
+
+function ensureStreamState(record: CallTranscript, totalUnits: number): StreamState {
+  if (!record.stream) {
+    record.stream = {
+      enabled: true,
+      totalUnits,
+      unitsReleased: 0,
+      chunks: [],
+    };
+  } else {
+    record.stream.enabled = true;
+    record.stream.totalUnits = totalUnits;
+    record.stream.unitsReleased = record.stream.unitsReleased ?? 0;
+    record.stream.chunks = record.stream.chunks ?? [];
+  }
+  return record.stream;
+}
+
+function buildStreamSegments() {
+  return [
+    {
+      units: 1,
+      payload: {
+        stage: 'quote',
+        price: '0.00034',
+        currency: config.currency,
+        slaMs: config.sla.good,
+      },
+      delayMs: 150,
+    },
+    {
+      units: 1,
+      payload: {
+        stage: 'verification',
+        reputationScore: 0.94,
+        disputeRisk: 0.02,
+        policy: 'assured.stream',
+      },
+      delayMs: 120,
+    },
+    {
+      units: 1,
+      payload: {
+        stage: 'result',
+        released: true,
+        settlementMs: 420,
+        note: 'Partial settle complete',
+      },
+      delayMs: 80,
+    },
+  ];
+}
+
+function applyBondSlash(serviceId: string, lamports: number) {
+  if (lamports <= 0) {
+    return;
+  }
+  const stats = ensureServiceStats(serviceId);
+  stats.bondLamports = Math.max(0, stats.bondLamports - lamports);
+  stats.hasBond = stats.bondLamports > 0;
+}
+
+function verifySignature(
+  message: Uint8Array,
+  signature: string | null | undefined,
+  signer: string | null | undefined
+): boolean {
+  if (!signature || !signer) {
+    return false;
+  }
+  try {
+    const sigBytes = Buffer.from(signature, 'base64');
+    const signerKey = new PublicKey(signer);
+    return nacl.sign.detached.verify(message, sigBytes, signerKey.toBytes());
+  } catch {
+    return false;
+  }
 }
 
 function hydrateCallRecord(
@@ -569,6 +1030,17 @@ function hydrateCallRecord(
       outcome: 'PENDING',
       evidence: [],
       scored: false,
+      trace: {},
+      stream: baseReqs.assured.stream
+        ? {
+            enabled: true,
+            totalUnits: baseReqs.assured.totalUnits ?? 1,
+            unitsReleased: 0,
+            chunks: [],
+          }
+        : undefined,
+      bond: deriveBondSnapshot(serviceId),
+      latency: deriveLatencySnapshot(serviceId),
     };
     callIndex.set(callId, record);
     callHistory.unshift(record);
@@ -598,6 +1070,9 @@ function deriveRequirementsForService(serviceId: string): PaymentRequirements {
   // Mirror/unknown services fall back to good template with overridden serviceId.
   const base = cloneRequirements(paymentRequirements('good'));
   base.assured.serviceId = serviceId;
+  if (base.assured.mirrors) {
+    base.assured.mirrors = base.assured.mirrors.map((entry) => buildMirrorDescriptor(serviceId, entry.url));
+  }
   return base;
 }
 
@@ -623,12 +1098,19 @@ function buildSummary() {
   const services = Array.from(serviceStats.values()).map((stats) => {
     const total = stats.ok + stats.late + stats.disputed;
     const score = total === 0 ? 1 : stats.ok / total;
+    const bondDisplay = (stats.bondLamports / LAMPORTS_PER_SOL).toFixed(2);
     return {
       serviceId: stats.serviceId,
       ok: stats.ok,
       late: stats.late,
       disputed: stats.disputed,
       score: Number(score.toFixed(2)),
+      hasBond: stats.hasBond,
+      bondLamports: stats.bondLamports,
+      bond: bondDisplay,
+      ewmaMs: stats.ewmaLatencyMs,
+      p95Ms: stats.p95LatencyMs,
+      latencySamples: stats.latencySamples,
     };
   });
 
@@ -639,6 +1121,7 @@ function buildSummary() {
     slaMs: record.slaMs,
     outcome: record.outcome === 'PENDING' ? null : record.outcome,
     tx: record.tx,
+    stream: record.stream ?? null,
   }));
 
   return { services, recent };
@@ -660,6 +1143,10 @@ function serializeCall(record: CallTranscript) {
     evidence: record.evidence,
     webhookVerified: record.webhookVerified ?? null,
     webhookReceivedAt: record.webhookReceivedAt ?? null,
+    trace: record.trace,
+    stream: record.stream ?? null,
+    bond: record.bond ?? null,
+    latency: record.latency ?? null,
   };
 }
 
@@ -762,6 +1249,9 @@ function defaultChecks(): StructuredChecks {
     acceptsRetry: { passed: false },
     returns200: { passed: false },
     settlesWithinSLA: { passed: false },
+    traceSaved: { passed: false },
+    traceValid: { passed: false },
+    mirrorSigValid: { passed: true },
   };
 }
 
@@ -807,6 +1297,8 @@ async function executeRun(body: RunRequestBody): Promise<CallTranscript> {
       return runStandardFlow(resolveRunUrl(body.url, '/api/good'), basePolicy);
     case 'bad':
       return runStandardFlow(resolveRunUrl(body.url, '/api/bad'), basePolicy);
+    case 'stream':
+      return runStandardFlow(resolveRunUrl(body.url, '/api/good_stream'), basePolicy);
     case 'fallback': {
       const fallbackPolicy = mergePolicy(cheap(), body.policy);
       return runFallbackFlow(resolveRunUrl(body.url, '/api/good'), fallbackPolicy);
@@ -894,14 +1386,17 @@ async function finalizeSettlement(
   const responseJson = JSON.stringify(payload);
   const responseHash = createHash('sha256').update(responseJson).digest();
   const deliveredAt = Date.now();
+  const responseHashHex = Buffer.from(responseHash).toString('hex');
+  const traceMessage = buildTraceMessage(receipt.callId, responseHashHex, deliveredAt);
+  const traceSignature = traceSigner.sign(traceMessage);
 
   let fulfillSignature: string | null = null;
   if (!seenFulfillments.has(receipt.callId)) {
     fulfillSignature = await settlementManager.fulfill({
       callId: receipt.callId,
-      txSig: receipt.txSig,
       responseHash: new Uint8Array(responseHash),
       deliveredAt,
+      signature: traceSignature,
     });
     seenFulfillments.add(receipt.callId);
   }
@@ -912,12 +1407,21 @@ async function finalizeSettlement(
 
   const headerPayload = {
     callId: receipt.callId,
-    responseHash: Buffer.from(responseHash).toString('hex'),
+    responseHash: responseHashHex,
     fulfilledAt: deliveredAt,
     mode: settlementManager.mode,
   };
   record.responseHash = headerPayload.responseHash;
+  record.trace = {
+    responseHash: responseHashHex,
+    signature: traceSignature,
+    signer: traceSigner.publicKey,
+    message: Buffer.from(traceMessage).toString('utf8'),
+    savedAt: deliveredAt,
+  };
   updateOutcome(record, 'RELEASED');
+  record.bond = deriveBondSnapshot(serviceId);
+  record.latency = deriveLatencySnapshot(serviceId);
 
   return encodeResponseHeader(headerPayload);
 }
@@ -939,7 +1443,11 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function createSettlementManager(cfg: ServerConfig, instance: FastifyInstance): SettlementManager {
+function createSettlementManager(
+  cfg: ServerConfig,
+  instance: FastifyInstance,
+  authority?: Keypair | null
+): SettlementManager {
   const log = instance.log;
 
   if (cfg.settlementMode !== 'onchain') {
@@ -950,10 +1458,14 @@ function createSettlementManager(cfg: ServerConfig, instance: FastifyInstance): 
         log.info({ callId: req.callId }, 'mock fulfill');
         return null;
       },
+      async fulfillPartial(req) {
+        log.info({ callId: req.callId, units: req.units }, 'mock partial fulfill');
+        return null;
+      },
     };
   }
 
-  const keypair = loadKeypair(cfg.providerKeypairPath);
+  const keypair = authority ?? loadKeypair(cfg.providerKeypairPath);
   if (!keypair) {
     log.warn(
       { path: cfg.providerKeypairPath },
@@ -965,6 +1477,10 @@ function createSettlementManager(cfg: ServerConfig, instance: FastifyInstance): 
         log.info({ callId: req.callId }, 'mock fulfill');
         return null;
       },
+      async fulfillPartial(req) {
+        log.info({ callId: req.callId, units: req.units }, 'mock partial fulfill');
+        return null;
+      },
     };
   }
 
@@ -972,8 +1488,7 @@ function createSettlementManager(cfg: ServerConfig, instance: FastifyInstance): 
   const wallet = createWallet(keypair);
   const provider = new AnchorProvider(connection, wallet, AnchorProvider.defaultOptions());
   const programId = new PublicKey(cfg.escrowProgramId);
-  const idl = escrowIdlJson as Idl;
-  const program = new Program(idl, programId, provider);
+  const program = new (Program as any)(escrowIdlJson, programId, provider);
   providerPublicKey = keypair.publicKey;
   refreshProviderBalance(connection, keypair.publicKey, instance.log);
   setInterval(() => refreshProviderBalance(connection, keypair.publicKey!, instance.log), 30_000).unref?.();
@@ -989,10 +1504,29 @@ function createSettlementManager(cfg: ServerConfig, instance: FastifyInstance): 
       );
       const ts = new BN(Math.floor(req.deliveredAt / 1000));
       const responseHashArray = Array.from(req.responseHash);
-      const providerSig = req.txSig ? Buffer.from(req.txSig, 'utf8') : Buffer.alloc(0);
+      const providerSig = req.signature ? Buffer.from(req.signature, 'base64') : Buffer.alloc(0);
 
       const signature = await program.methods
         .fulfill(responseHashArray, ts, Array.from(providerSig))
+        .accounts({
+          escrowCall,
+          provider: keypair.publicKey,
+        })
+        .signers([keypair])
+        .rpc();
+      return signature;
+    },
+    async fulfillPartial(req) {
+      const [escrowCall] = PublicKey.findProgramAddressSync(
+        [Buffer.from('call'), Buffer.from(req.callId)],
+        programId
+      );
+      const ts = new BN(Math.floor(req.deliveredAt / 1000));
+      const responseHashArray = Array.from(req.chunkHash);
+      const providerSig = req.signature ? Buffer.from(req.signature, 'base64') : Buffer.alloc(0);
+
+      const signature = await program.methods
+        .fulfillPartial(responseHashArray, new BN(req.units), ts, Array.from(providerSig))
         .accounts({
           escrowCall,
           provider: keypair.publicKey,
@@ -1020,6 +1554,23 @@ function loadKeypair(maybePath?: string): Keypair | null {
     fastify.log.warn({ err }, 'failed to load keypair from path or inline array');
   }
   return null;
+}
+
+function createTraceSigner(authority: Keypair | null | undefined): TraceAuthority {
+  const keypair = authority ?? fallbackTraceKeypair();
+  return {
+    keypair,
+    publicKey: keypair.publicKey.toBase58(),
+    sign(message: Uint8Array) {
+      const signature = nacl.sign.detached(message, keypair.secretKey);
+      return Buffer.from(signature).toString('base64');
+    },
+  };
+}
+
+function fallbackTraceKeypair(): Keypair {
+  const seed = createHash('sha256').update('assured-trace-fallback').digest();
+  return Keypair.fromSeed(Uint8Array.from(seed));
 }
 
 function createWallet(keypair: Keypair) {

@@ -1,17 +1,29 @@
 // sdk/ts/index.ts
-import type { Idl, Wallet } from '@coral-xyz/anchor';
-import anchor from '@coral-xyz/anchor';
+import type { Idl, Wallet, Program as AnchorProgram } from '@coral-xyz/anchor';
+import { AnchorProvider, Program } from '@coral-xyz/anchor';
 import { Connection, Keypair, PublicKey } from '@solana/web3.js';
+import nacl from 'tweetnacl';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 const reputationIdlJson = require('../../contracts/reputation/target/idl/reputation.json') as Idl;
-const { AnchorProvider, Program } = anchor as typeof import('@coral-xyz/anchor');
 
 import type { Facilitator, PaymentRequirements } from './facilitators.ts';
 import { nativeFacilitator } from './facilitators.ts';
 
-export type Policy = { minReputation: number; maxPrice: number; requireSLA: boolean };
+type ClientEventMap = {
+  partialRelease: { index: number; totalUnits: number };
+  finalSettle: { callId: string };
+};
+
+type ClientEventName = keyof ClientEventMap;
+
+export type Policy = {
+  minReputation: number;
+  maxPrice: number;
+  requireSLA: boolean;
+  slaP95MaxMs?: number;
+};
 
 export type PolicyOverride = Partial<Policy>;
 
@@ -33,9 +45,11 @@ export const cheap = (): Policy => ({ minReputation: 0.4, maxPrice: 0.01, requir
 
 export class Assured402Client {
   private facilitatorInstance?: Facilitator;
-  private reputationProgram?: Program;
+  private reputationProgram?: AnchorProgram;
   private readOnlyWallet?: Wallet;
   private opts: Assured402ClientOptions;
+  private listeners: Map<ClientEventName, Set<(payload: any) => void>> = new Map();
+  private pendingTimers: ReturnType<typeof setTimeout>[] = [];
 
   constructor(opts: Assured402ClientOptions = {}) {
     this.opts = opts;
@@ -145,7 +159,7 @@ export class Assured402Client {
     }
   }
 
-  private getReputationProgram(): Program | null {
+  private getReputationProgram(): AnchorProgram | null {
     if (this.reputationProgram) {
       return this.reputationProgram;
     }
@@ -155,7 +169,7 @@ export class Assured402Client {
     }
     const programId = new PublicKey(this.opts.reputationProgramId ?? DEFAULT_REPUTATION_PROGRAM_ID);
     const provider = new AnchorProvider(connection, this.getReadOnlyWallet(), AnchorProvider.defaultOptions());
-    this.reputationProgram = new Program(reputationIdlJson, programId, provider);
+    this.reputationProgram = new (Program as any)(reputationIdlJson, programId, provider);
     return this.reputationProgram;
   }
 
@@ -167,13 +181,14 @@ export class Assured402Client {
       const kp = Keypair.generate();
       this.readOnlyWallet = {
         publicKey: kp.publicKey,
+        payer: kp,
         async signTransaction(tx) {
           return tx;
         },
         async signAllTransactions(txs) {
           return txs;
         },
-      };
+      } as Wallet;
     }
     return this.readOnlyWallet;
   }

@@ -52,7 +52,7 @@ program
     try {
       const first = await fetch(url);
       assert.equal(first.status, 402, 'Expected HTTP 402 response');
-      const body = await first.json();
+      const body = await first.json() as PaymentRequirements;
       assert.ok(
         validateRequirements(body),
         ajv.errorsText(validateRequirements.errors, { separator: '\n' })

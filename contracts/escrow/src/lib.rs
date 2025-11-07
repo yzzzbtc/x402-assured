@@ -53,7 +53,10 @@ pub mod escrow {
             ec.provider,
             AssuredError::InvalidProvider
         );
-        require!(provider_sig.len() <= MAX_PROVIDER_SIG_LEN, AssuredError::SignatureTooLong);
+        require!(
+            provider_sig.len() <= MAX_PROVIDER_SIG_LEN,
+            AssuredError::SignatureTooLong
+        );
         ec.response_hash = response_hash;
         ec.delivered_ts = Some(ts);
         ec.status = Status::Fulfilled as u8;
@@ -78,44 +81,45 @@ pub mod escrow {
         ts: u64,
         provider_sig: Vec<u8>,
     ) -> Result<()> {
-        require!(units > 0, AssuredError::InvalidUnits);
         require_keys_eq!(
             ctx.accounts.provider.key(),
             ctx.accounts.escrow_call.provider,
             AssuredError::InvalidProvider
         );
-        require!(provider_sig.len() <= MAX_PROVIDER_SIG_LEN, AssuredError::SignatureTooLong);
-        let new_total = ctx
-            .accounts
-            .escrow_call
-            .units_released
-            .checked_add(units)
-            .ok_or(AssuredError::InvalidUnits)?;
-        require!(new_total <= ctx.accounts.escrow_call.total_units, AssuredError::InvalidUnits);
+        require!(
+            provider_sig.len() <= MAX_PROVIDER_SIG_LEN,
+            AssuredError::SignatureTooLong
+        );
 
-        let payout = amount_for_units(&ctx.accounts.escrow_call, ctx.accounts.escrow_call.units_released, units);
-        if payout > 0 {
+        let result = apply_partial_release(
+            &mut ctx.accounts.escrow_call,
+            chunk_hash,
+            units,
+            ts,
+            &provider_sig,
+        )?;
+
+        if result.payout > 0 {
             let escrow_info = ctx.accounts.escrow_call.to_account_info();
             let provider_info = ctx.accounts.provider.to_account_info();
-            pay_out(payout, &escrow_info, &provider_info)?;
+            pay_out(result.payout, &escrow_info, &provider_info)?;
         }
 
-        let ec = &mut ctx.accounts.escrow_call;
-        ec.units_released = new_total;
-        ec.response_hash = chunk_hash;
-        ec.provider_sig = provider_sig;
-        if ec.units_released == ec.total_units {
-            ec.delivered_ts = Some(ts);
-            ec.status = Status::Fulfilled as u8;
-        }
+        let ec = &ctx.accounts.escrow_call;
         emit!(PartialReleased {
             call_id: ec.call_id.clone(),
-            units,
-            total_units: ec.total_units,
+            units: result.units,
+            total_units: result.total_units,
         });
+        if result.emit_trace {
+            emit!(TraceSaved {
+                call_id: ec.call_id.clone(),
+                response_hash: chunk_hash,
+                provider_sig,
+            });
+        }
         Ok(())
     }
-
 
     pub fn raise_dispute(
         ctx: Context<RaiseDispute>,
@@ -162,15 +166,25 @@ pub mod escrow {
         let now = Clock::get()?.unix_timestamp as u64;
         let outcome = evaluate_settlement(&ctx.accounts.escrow_call, now);
         let amount = ctx.accounts.escrow_call.amount;
-        let released_so_far = amount_for_units(&ctx.accounts.escrow_call, 0, ctx.accounts.escrow_call.units_released);
-        let remaining_units = ctx.accounts.escrow_call
+        let released_so_far = amount_for_units(
+            &ctx.accounts.escrow_call,
+            0,
+            ctx.accounts.escrow_call.units_released,
+        );
+        let remaining_units = ctx
+            .accounts
+            .escrow_call
             .total_units
             .saturating_sub(ctx.accounts.escrow_call.units_released);
         let remaining_amount = amount.saturating_sub(released_so_far);
         match outcome {
             SettlementOutcome::Release => {
                 if remaining_units > 0 {
-                    let payout = amount_for_units(&ctx.accounts.escrow_call, ctx.accounts.escrow_call.units_released, remaining_units);
+                    let payout = amount_for_units(
+                        &ctx.accounts.escrow_call,
+                        ctx.accounts.escrow_call.units_released,
+                        remaining_units,
+                    );
                     if payout > 0 {
                         let escrow_info = ctx.accounts.escrow_call.to_account_info();
                         let provider_info = ctx.accounts.provider.to_account_info();
@@ -371,6 +385,47 @@ fn pay_out<'info>(
     Ok(())
 }
 
+struct PartialReleaseState {
+    payout: u64,
+    units: u64,
+    total_units: u64,
+    emit_trace: bool,
+}
+
+fn apply_partial_release(
+    ec: &mut EscrowCall,
+    chunk_hash: [u8; 32],
+    units: u64,
+    ts: u64,
+    provider_sig: &[u8],
+) -> Result<PartialReleaseState> {
+    require!(units > 0, AssuredError::InvalidUnits);
+    let start_units = ec.units_released;
+    let new_total = start_units
+        .checked_add(units)
+        .ok_or(AssuredError::InvalidUnits)?;
+    require!(new_total <= ec.total_units, AssuredError::InvalidUnits);
+
+    let payout = amount_for_units(ec, start_units, units);
+    ec.units_released = new_total;
+    ec.response_hash = chunk_hash;
+    ec.provider_sig = provider_sig.to_vec();
+
+    let mut emit_trace = false;
+    if ec.units_released == ec.total_units {
+        ec.delivered_ts = Some(ts);
+        ec.status = Status::Fulfilled as u8;
+        emit_trace = true;
+    }
+
+    Ok(PartialReleaseState {
+        payout,
+        units,
+        total_units: ec.total_units,
+        emit_trace,
+    })
+}
+
 fn amount_for_units(ec: &EscrowCall, start: u64, units: u64) -> u64 {
     if units == 0 || ec.total_units == 0 {
         return 0;
@@ -429,6 +484,26 @@ mod tests {
         }
     }
 
+    fn streaming_call(total_units: u64, amount: u64) -> EscrowCall {
+        EscrowCall {
+            call_id: "stream-call".to_string(),
+            payer: Pubkey::default(),
+            service_id: "svc".to_string(),
+            provider: Pubkey::new_unique(),
+            amount,
+            start_ts: 0,
+            sla_ms: 2_000,
+            dispute_window_s: 10,
+            status: Status::Init as u8,
+            delivered_ts: None,
+            response_hash: [0u8; 32],
+            disputed: false,
+            total_units,
+            units_released: 0,
+            provider_sig: vec![],
+        }
+    }
+
     #[test]
     fn amount_for_units_distributes_evenly() {
         let mut ec = base_call();
@@ -439,6 +514,32 @@ mod tests {
         assert_eq!(amount_for_units(&ec, 1, 1), 33);
         assert_eq!(amount_for_units(&ec, 2, 1), 33);
         assert_eq!(amount_for_units(&ec, 0, 3), 100);
+    }
+
+    #[test]
+    fn partial_release_updates_units_and_flags_trace() {
+        let mut ec = streaming_call(3, 90);
+        let first = apply_partial_release(&mut ec, [1u8; 32], 1, 1_000, b"sig1").unwrap();
+        assert_eq!(ec.units_released, 1);
+        assert_eq!(ec.status, Status::Init as u8);
+        assert_eq!(first.payout, 30);
+        assert!(!first.emit_trace);
+        assert_eq!(ec.provider_sig, b"sig1".to_vec());
+
+        let second = apply_partial_release(&mut ec, [2u8; 32], 2, 2_000, b"sig2").unwrap();
+        assert_eq!(ec.units_released, 3);
+        assert_eq!(ec.status, Status::Fulfilled as u8);
+        assert_eq!(ec.delivered_ts, Some(2_000));
+        assert_eq!(second.payout, 60);
+        assert!(second.emit_trace);
+        assert_eq!(ec.provider_sig, b"sig2".to_vec());
+    }
+
+    #[test]
+    fn partial_release_rejects_invalid_units() {
+        let mut ec = streaming_call(2, 50);
+        assert!(apply_partial_release(&mut ec, [1u8; 32], 0, 1_000, b"sig").is_err());
+        assert!(apply_partial_release(&mut ec, [1u8; 32], 3, 1_000, b"sig").is_err());
     }
 
     #[test]
