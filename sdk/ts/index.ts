@@ -192,6 +192,97 @@ export class Assured402Client {
     }
     return this.readOnlyWallet;
   }
+
+  on<K extends ClientEventName>(event: K, handler: (payload: ClientEventMap[K]) => void): void {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    this.listeners.get(event)!.add(handler);
+  }
+
+  off<K extends ClientEventName>(event: K, handler: (payload: ClientEventMap[K]) => void): void {
+    const handlers = this.listeners.get(event);
+    if (handlers) {
+      handlers.delete(handler);
+    }
+  }
+
+  private emit<K extends ClientEventName>(event: K, payload: ClientEventMap[K]): void {
+    const handlers = this.listeners.get(event);
+    if (handlers) {
+      for (const handler of handlers) {
+        try {
+          handler(payload);
+        } catch (err) {
+          console.error(`Error in ${event} event handler:`, err);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Verify a trace signature from the server
+ * @param callId The call ID
+ * @param responseHashHex The response hash in hex format
+ * @param deliveredAt The delivery timestamp
+ * @param signature The base64-encoded signature
+ * @param signerPublicKey The signer's public key (base58 string)
+ * @returns true if signature is valid
+ */
+export function verifyTrace(
+  callId: string,
+  responseHashHex: string,
+  deliveredAt: number,
+  signature: string,
+  signerPublicKey: string
+): boolean {
+  try {
+    const message = buildTraceMessage(callId, responseHashHex, deliveredAt);
+    const sigBytes = Buffer.from(signature, 'base64');
+    const pubkey = new PublicKey(signerPublicKey);
+    const pubkeyBytes = pubkey.toBytes();
+    return nacl.sign.detached.verify(message, sigBytes, pubkeyBytes);
+  } catch (err) {
+    console.error('verifyTrace error:', err);
+    return false;
+  }
+}
+
+/**
+ * Verify a mirror signature
+ * @param serviceId The service ID
+ * @param url The mirror URL
+ * @param signature The base64-encoded signature
+ * @param signerPublicKey The signer's public key (base58 string)
+ * @returns true if signature is valid
+ */
+export function verifyMirrorSig(
+  serviceId: string,
+  url: string,
+  signature: string,
+  signerPublicKey: string
+): boolean {
+  try {
+    const message = buildMirrorMessage(serviceId, url);
+    const sigBytes = Buffer.from(signature, 'base64');
+    const pubkey = new PublicKey(signerPublicKey);
+    const pubkeyBytes = pubkey.toBytes();
+    return nacl.sign.detached.verify(message, sigBytes, pubkeyBytes);
+  } catch (err) {
+    console.error('verifyMirrorSig error:', err);
+    return false;
+  }
+}
+
+function buildTraceMessage(callId: string, responseHashHex: string, deliveredAt: number): Uint8Array {
+  const encoder = new TextEncoder();
+  return encoder.encode(`assured-trace|${callId}|${responseHashHex}|${deliveredAt}`);
+}
+
+function buildMirrorMessage(serviceId: string, url: string): Uint8Array {
+  const encoder = new TextEncoder();
+  return encoder.encode(`assured-mirror|${serviceId}|${url}`);
 }
 
 function isAccountMissingError(err: unknown): boolean {

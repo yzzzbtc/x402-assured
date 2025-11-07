@@ -4,6 +4,19 @@ export type ServiceSummary = {
   late: number;
   disputed: number;
   score: number;
+  hasBond?: boolean;
+  bondLamports?: number;
+  bond?: string;
+  ewmaMs?: number | null;
+  p95Ms?: number | null;
+  latencySamples?: number;
+};
+
+export type StreamState = {
+  enabled: boolean;
+  totalUnits: number;
+  unitsReleased: number;
+  timeline?: Array<{ index: number; at: number; txSig?: string }>;
 };
 
 export type RecentCall = {
@@ -17,11 +30,32 @@ export type RecentCall = {
     fulfill: string | null;
     settle: string | null;
   };
+  stream?: StreamState | null;
 };
 
 export type SummaryResponse = {
   services: ServiceSummary[];
   recent: RecentCall[];
+};
+
+export type TraceInfo = {
+  responseHash: string;
+  signature: string;
+  signer: string;
+  message: string;
+  savedAt: number;
+};
+
+export type BondSnapshot = {
+  hasBond: boolean;
+  bondLamports: number;
+  bond: string;
+};
+
+export type LatencySnapshot = {
+  ewmaMs: number | null;
+  p95Ms: number | null;
+  samples: number;
 };
 
 export type CallTranscript = {
@@ -46,6 +80,10 @@ export type CallTranscript = {
   evidence: Record<string, unknown>[];
   webhookVerified: boolean | null;
   webhookReceivedAt: number | null;
+  trace?: TraceInfo | null;
+  stream?: StreamState | null;
+  bond?: BondSnapshot | null;
+  latency?: LatencySnapshot | null;
 };
 
 export type RunType = 'good' | 'bad' | 'fallback';

@@ -1,0 +1,727 @@
+# x402‑Assured — Spec‑Aligned Entry Text + Phased Build Plan
+
+## 0) Entry Text (README / Submission blurb)
+
+**Title:** x402‑Assured — SLA escrow, disputes, and on‑chain reputation for x402 on Solana
+**One‑liner:** Make agent payments safe by default. x402‑Assured routes each 402 payment through a minimal Solana escrow, releases only when SLA is met and no dispute is raised, and writes outcomes to a public reputation registry that other agents can query before paying.
+**Why now:** x402 unlocks instant, HTTP‑native payments; what’s missing is **recourse and shared memory** against slow/bad providers. We add both without breaking the wire spec.
+
+**What it does (spec‑aligned):**
+
+* Responds with standard **HTTP 402 Payment Requirements**; extensions live under a namespaced `"assured"` object (`serviceId`, `slaMs`, `disputeWindowS`, `escrowProgram`).
+* Client pays and retries with the standard **`X-PAYMENT`** header (base64 receipt). Server verifies and calls on‑chain **`fulfill`**; settlement is gated by SLA & disputes.
+* Disputes post structured evidence (`LATE`, `NO_RESPONSE`, `BAD_PROOF`, `MISMATCH_HASH`) on-chain. Reputation aggregates `ok/late/disputed` per `serviceId`.
+* Ships a TypeScript SDK that wraps the 402 flow with **agent policy** (`minReputation`, `maxPrice`, `requireSLA`) and optional **auto‑dispute**.
+* Drop‑in facilitator adapters (native / Corbits / Coinbase) so existing x402 stacks can enable **Assured mode** via a flag.
+
+**Tracks:** Best x402 Dev Tool (primary) • Best Trustless Agent (secondary).
+**Status:** Devnet‑ready contracts, demo server (`/api/good`, `/api/bad`), SDK, and a live dashboard that visualizes service scores.
+
+---
+
+## 1) Architecture Overview
+
+* **Escrow Program (Anchor):** `init_payment(callId, payer, serviceId, amount, slaMs, disputeWindowS)` → holds funds; `fulfill(callId, responseHash, ts)`; `raise_dispute(callId, kind, reasonHash)`; `settle(callId)` → release/refund.
+* **Reputation Registry (PDA per serviceId):** counters `ok`, `late`, `disputed` → client‑side score `ok / (ok + late + disputed)`.
+* **x402 Server (Fastify/Express):** returns spec‑compliant 402 with `assured` extension; on retry with `X-PAYMENT`, verifies proof, writes `fulfill`, returns `200`.
+* **SDK (TypeScript):** `assured.fetch(url, { policy, facilitator })` → implements 402 flow + policy checks + optional auto‑dispute; facilitators: `native | corbits | coinbase`.
+* **Dashboard (Vite/Next):** lists services, outcomes, scores; buttons to run the demo flows.
+
+### ASCII Architecture Diagram
+
+```
++--------------------+           HTTP           +------------------------------+
+|        Agent       |  GET /api/x  ─────────▶  |        x402 Server/API       |
+|  (SDK: assured.js) |                          | (Fastify/Express + Assured)  |
++----------+---------+                          +---------------+--------------+
+           |                                                    |
+           |  402 PaymentRequired (PaymentRequirements JSON)    |
+           ◀────────────────────────────────────────────────────┘
+           |
+           |  (1) Policy check: reputation, price, SLA
+           |  (2) init_payment(callId, ... amount ...)  ────────────────┐
+           |                                                             |
+           |                    Solana (devnet)                          |
+           |        +-------------------+   +------------------------+   |
+           |        |   Escrow Program  |   |  Reputation Registry  |   |
+           |        |  (Anchor PDA per  |   | (PDA per serviceId)   |   |
+           |        |     callId)       |   | ok/late/disputed tallies| |
+           |        +---------+---------+   +-----------+------------+   |
+           |                  ^                         ^                |
+           |                  |                         |                |
+           |   fulfill(callId,responseHash,ts)          |                |
+           |   settle(callId) / refund or release       |                |
+           |                                            | update(outcome)|
+           |                                            |                |
+           └────────────────────────────────────────────┴────────────────┘
+                         ^                        |
+                         |                        |
+           retry with X-PAYMENT header            |
+                         |                        |
++--------------------+   |    200 OK + body       |       +-------------------+
+|        Agent       | ◀─┘   (auto‑dispute if bad)|       |   Dashboard UI    |
+|  (SDK: assured.js) |                            |       | (service scores)  |
++--------------------+                            |       +-------------------+
+                                                  |
+                       disputes(kind,reasonHash) ─┘
+```
+
+---
+
+## 2) Repo Skeleton
+
+```
+x402-assured/
+  contracts/
+    escrow/
+    reputation/
+  server/
+    facilitator.ts   # returns spec 402 + assured extension
+    good.ts          # fast path service
+    bad.ts           # slow/invalid path service
+  sdk/ts/
+    index.ts         # policy + facilitator plug-ins
+  dashboard/
+    web/
+  demo/
+    good-demo.ts
+    bad-demo.ts
+    script.md        # 3-min video outline
+  README.md
+```
+
+---
+
+## 3) Comprehensive Phased Plan (spec‑aligned)
+
+### Phase 0 — Framing (1–2 hrs)
+
+* Name & tagline locked (above).
+* Tracks: **Best x402 Dev Tool** (primary), **Best Trustless Agent** (secondary).
+* Success criteria pinned in README: end‑to‑end on devnet; good→release; bad→refund; second agent refuses low‑rep; simple `pnpm dev` run path; 3‑min video.
+
+### Phase 1 — Solana Core (Day 1–2)
+
+1. **Scaffold & env**: `solana-test-validator`, `anchor init`, program IDs, devnet config.
+2. **Escrow program:**
+
+   * Accounts: `EscrowCall{callId, payer, serviceId, amount, startTs, slaMs, disputeWindowS, status, deliveredTs?, responseHash?, disputed?}`
+   * Ix: `init_payment`, `fulfill`, `raise_dispute(kind, reasonHash)`, `settle`.
+   * Settlement rule: **Release** if `deliveredTs - startTs <= slaMs` **and** `!disputed` within window; otherwise **refund**.
+3. **Reputation registry:**
+
+   * PDA keyed by `serviceId`; methods: `update_reputation(serviceId, outcome)`; outcomes: `OK`, `LATE`, `DISPUTED`.
+4. **Unit tests (Anchor)** for `release` & `refund` branches.
+
+**Output:** Deployed devnet programs + IDLs.
+
+### Phase 2 — x402 Server (Day 2–3)
+
+* Implement `/api/good` and `/api/bad` routes.
+* On unauth’d request → return spec 402 body + `assured` extension.
+* On retry w/ `X-PAYMENT` → verify payment (native proof or facilitator) → call `fulfill` → return `200` with body.
+* `/api/bad` intentionally violates SLA or returns malformed to trigger refund/dispute.
+
+**Output:** Local server speaking x402 natively; curlable.
+
+### Phase 3 — SDK / Agent Client (Day 3–4)
+
+* `assured.fetch(url, { policy, facilitator })` where `policy = { minReputation, maxPrice, requireSLA }`.
+* Flow: fetch→402 → reputation check (abort if below threshold) → `init_payment` → retry with `X-PAYMENT` → validate → if fail, `raise_dispute`.
+* Facilitator plug‑ins: `native | corbits | coinbase` (flag enables their verification endpoints if present).
+
+**Output:** Example TS scripts showing two agents and both happy/negative paths.
+
+### Phase 4 — Dashboard (Day 4–5)
+
+* Vite/Next single page: list services, counts, score %, and live call log.
+* Buttons: “Call good”, “Call bad”, “Query reputation”.
+
+**Output:** Visual proof for the 3‑minute demo.
+
+### Phase 5 — Demo Script & Docs (Day 5)
+
+* **README**: purpose, spec‑compatibility note, quickstart (`anchor deploy`, `pnpm dev`), demo commands, architecture diagram (ASCII ok).
+* **Video (≤3:00)**:
+
+  * 0:00–0:30 problem & spec fit
+  * 0:30–1:30 good call → release → reputation++
+  * 1:30–2:10 bad call → dispute/refund → reputation--
+  * 2:10–2:40 second agent refuses low‑rep service
+  * 2:40–3:00 recap & repo.
+
+### Phase 6 — Depth & Differentiation (Day 6–7)
+
+* **Evidence taxonomy** in disputes: `LATE`, `NO_RESPONSE`, `BAD_PROOF`, `MISMATCH_HASH`.
+* **Fallback provider**: if `score < threshold`, route to `altUrl` advertised in 402 (`assured.altService`), or abort per policy.
+* **Sybil resistance lite**: dispute weight = `min(1, successes/3)` per reporter.
+* **JSON schema** for `assured` object; basic type‑safe validator in SDK.
+
+### Phase 7 — Submission Pack (Day 7)
+
+* Public GitHub + LICENSE (MIT/Apache‑2.0).
+* Program IDs (devnet), facilitator config, and env sample.
+* Demo video upload/link.
+* One‑pager: “How x402‑Assured advances the agent economy on Solana.”
+
+---
+
+## 3.1) Scope Additions — Locked for Submission
+
+### High‑Impact (ship all)
+
+1. **Spec‑conformance test suite (CLI):** quick checks for valid 402 JSON, `X-PAYMENT` round‑trip, and `assured` namespace presence/shape.
+2. **Facilitator adapters:** toggle `assured: true` for **Coinbase ref impl** and **Corbits**; preserve default facilitator behavior if flag off.
+3. **Signed attestations:** require signatures on `fulfill` and `raise_dispute`; store signer pubkey + sig in PDA.
+4. **Provider webhooks:** `/webhook/settlement` with HMAC; providers receive release/refund + callId + hashes.
+5. **SDK policy presets:** `strict()`, `balanced()`, `cheap()` (sets `minReputation`, `maxPrice`, `requireSLA`).
+
+### Medium‑Impact (choose two; included)
+
+6. **Fallback routing:** if `score < threshold`, SDK routes to `assured.altService` from 402; otherwise abort per policy.
+7. **Reputation weights:** dispute weight = `min(1, successes/3)`; apply to registry updates for `DISPUTED` outcomes.
+
+---
+
+## 3.2) Contract Changes for Additions
+
+* **EscrowCall PDA** add fields: `servicePubkey`, `payerSig?`, `providerSig?` (bytes), `altServiceUri?` (optional for demo).
+* **Instructions**:
+
+  * `fulfill(callId, responseHash, ts, providerSig)` → verify providerSig over `(callId, responseHash, ts)`.
+  * `raise_dispute(callId, kind, reasonHash, reporterSig)` → verify reporterSig over `(callId, kind, reasonHash)`.
+  * `settle(callId)` → compute outcome; emit event with `released|refunded`.
+* **Reputation**: `update_weighted(serviceId, outcome, weightF32)`; client computes weight; program clamps [0,1].
+
+---
+
+## 3.3) Server Changes for Additions
+
+* Extend 402 payload `assured` with: `altService` (URL), `sigAlg` (e.g., `ed25519`).
+* On success: sign `(callId, responseHash, ts)` with provider key and pass to `fulfill`.
+* Implement HMAC‑secured `/webhook/settlement` for release/refund notifications.
+
+**Assured 402 (example, extended)**
+
+```json
+{
+  "price": "0.001",
+  "currency": "USDC",
+  "network": "solana-devnet",
+  "recipient": "<merchant_pubkey>",
+  "assured": {
+    "serviceId": "demo:good",
+    "slaMs": 2000,
+    "disputeWindowS": 10,
+    "escrowProgram": "<program_id>",
+    "altService": "https://localhost:3000/api/good_mirror",
+    "sigAlg": "ed25519"
+  }
+}
+```
+
+---
+
+## 3.4) SDK Changes for Additions
+
+* **Policy presets**:
+
+```ts
+export const strict = () => ({ minReputation: 0.8, maxPrice: 0.02, requireSLA: true });
+export const balanced = () => ({ minReputation: 0.6, maxPrice: 0.05, requireSLA: true });
+export const cheap = () => ({ minReputation: 0.4, maxPrice: 0.01, requireSLA: false });
+```
+
+* **Fallback routing:** if score<threshold and `assured.altService` present → retry flow against altService.
+* **Signed disputes:** reporter signs `(callId, kind, reasonHash)`; attach sig bytes to transaction.
+* **Facilitator plug‑in interface**:
+
+```ts
+export interface Facilitator {
+  name: 'native' | 'coinbase' | 'corbits';
+  verifyPayment(req: PaymentRequirements): Promise<PaymentProof>;
+  settle?(proof: PaymentProof): Promise<void>; // if facilitator exposes settlement endpoint
+}
+```
+
+---
+
+## 3.5) CLI & Conformance Tests
+
+* **Commands**:
+
+```
+$ npx assured402 conformance https://localhost:3000/api/good
+  ✓ returns HTTP 402 with valid PaymentRequirements
+  ✓ includes namespaced `assured` block
+  ✓ accepts X-PAYMENT retry → returns 200
+
+$ npx assured402 demo good
+$ npx assured402 demo bad
+```
+
+* **Checks**: schema validation (AJV), header casing, base64 receipts, timing windows, and optional altService hint.
+
+---
+
+## 3.6) Demo Enhancements
+
+* **A/B flow**: vanilla x402 vs x402‑Assured on `/api/bad` (refund vs loss).
+* **Fallback**: show automatic route to `altService` with success.
+* **Weights**: display reporter credibility and weighted dispute effect in dashboard.
+
+---
+
+## 4) Facilitator Adapter Stubs (SDK/TS)
+
+Create `sdk/ts/facilitators.ts` with a minimal interface + pluggable adapters. These are drop‑in for teams already on Coinbase/Corbits; default is `native`.
+
+```ts
+// sdk/ts/facilitators.ts
+export type PaymentRequirements = {
+  price: string;
+  currency: string; // e.g., 'USDC' or 'SOL'
+  network: string;  // e.g., 'solana-devnet'
+  recipient: string; // merchant pubkey
+  assured?: {
+    serviceId: string;
+    slaMs: number;
+    disputeWindowS: number;
+    escrowProgram: string;
+    altService?: string;
+    sigAlg?: 'ed25519';
+  };
+};
+
+export type PaymentProof = {
+  callId: string;
+  txSig: string; // on-chain tx signature
+  headerValue: string; // base64 string for X-PAYMENT
+};
+
+export interface Facilitator {
+  name: 'native' | 'coinbase' | 'corbits';
+  verifyPayment(req: PaymentRequirements): Promise<PaymentProof>;
+  settle?(proof: PaymentProof): Promise<void>; // optional
+}
+
+// Native (direct on-chain) — uses your escrow program directly
+export function nativeFacilitator(params: { connection: any; wallet: any; escrowProgramId: string; }) : Facilitator {
+  return {
+    name: 'native',
+    async verifyPayment(req) {
+      // TODO: call init_payment, return proof with txSig + base64 header
+      return { callId: 'CALL_'+Date.now(), txSig: 'TODO', headerValue: 'TODO' };
+    },
+    async settle(proof) {
+      // optional; usually the server calls fulfill/settle
+    }
+  };
+}
+
+// Coinbase reference impl — placeholder for their verify/settle endpoints
+export function coinbaseFacilitator(params: { baseUrl: string; apiKey?: string }) : Facilitator {
+  return {
+    name: 'coinbase',
+    async verifyPayment(req) {
+      // TODO: POST to Coinbase facilitator /verify with PaymentRequirements
+      return { callId: 'CB_'+Date.now(), txSig: 'TODO', headerValue: 'TODO' };
+    },
+    async settle(proof) {
+      // TODO: POST to /settle if their flow exposes it
+    }
+  };
+}
+
+// Corbits facilitator — placeholder
+export function corbitsFacilitator(params: { baseUrl: string; apiKey?: string }) : Facilitator {
+  return {
+    name: 'corbits',
+    async verifyPayment(req) {
+      // TODO: POST to Corbits facilitator /verify
+      return { callId: 'CO_'+Date.now(), txSig: 'TODO', headerValue: 'TODO' };
+    }
+  };
+}
+```
+
+Update `sdk/ts/index.ts` to accept a `facilitator` instance and fall back to `native`.
+
+```ts
+// sdk/ts/index.ts (excerpt)
+import { Facilitator, nativeFacilitator, PaymentRequirements } from './facilitators';
+
+export type Policy = { minReputation: number; maxPrice: number; requireSLA: boolean };
+
+export class Assured402Client {
+  constructor(private opts: { facilitator?: Facilitator; policy?: Policy }) {}
+
+  private get facilitator(): Facilitator {
+    return this.opts.facilitator ?? nativeFacilitator({ connection: null, wallet: null, escrowProgramId: 'TODO' });
+  }
+
+  async fetch(url: string, overridePolicy?: Partial<Policy>): Promise<Response> {
+    const policy = { ...{ minReputation: 0.6, maxPrice: 0.05, requireSLA: true }, ...this.opts.policy, ...overridePolicy };
+    const first = await fetch(url);
+    if (first.status !== 402) return first;
+    const req: PaymentRequirements = await first.json();
+    // TODO: reputation check, price check, SLA check here
+    const proof = await this.facilitator.verifyPayment(req);
+    return fetch(url, { headers: { 'X-PAYMENT': proof.headerValue } });
+  }
+}
+```
+
+---
+
+## 5) Conformance CLI Skeleton
+
+Add `tools/cli` with a TypeScript CLI (commander). This ensures spec cleanliness and gives judges a one‑command test.
+
+**package.json scripts**
+
+```json
+{
+  "scripts": {
+    "cli": "tsx tools/cli/index.ts",
+    "conf": "tsx tools/cli/index.ts conformance",
+    "demo:good": "tsx tools/cli/index.ts demo good",
+    "demo:bad": "tsx tools/cli/index.ts demo bad"
+  }
+}
+```
+
+**tools/cli/index.ts**
+
+```ts
+#!/usr/bin/env node
+import { Command } from 'commander';
+import assert from 'node:assert';
+import Ajv from 'ajv';
+
+const program = new Command();
+program
+  .name('assured402')
+  .description('x402-Assured CLI & conformance tests');
+
+program.command('conformance')
+  .argument('<url>')
+  .action(async (url) => {
+    const ajv = new Ajv();
+    const res = await fetch(url);
+    assert.equal(res.status, 402, 'Expected HTTP 402');
+    const body = await res.json();
+    // TODO: validate PaymentRequirements against schema
+    console.log('✓ 402 with PaymentRequirements');
+    assert.ok(body.assured, 'Missing assured extension');
+    console.log('✓ assured extension present');
+    // TODO: simulate payment → retry with X-PAYMENT → expect 200
+    console.log('… payment/settlement path (TODO)');
+  });
+
+program.command('demo')
+  .argument('<which>', 'good|bad')
+  .action(async (which) => {
+    const url = which === 'good' ? 'http://localhost:3000/api/good' : 'http://localhost:3000/api/bad';
+    const r = await fetch(url);
+    console.log(which.toUpperCase(), r.status);
+    // TODO: drive full happy/negative paths via SDK
+  });
+
+program.parseAsync();
+```
+
+---
+
+## 6) Devnet Deployment — Zero‑Cost Setup
+
+You can run everything on **Solana devnet** with airdropped test SOL; no real funds needed.
+
+**Configure devnet & keypair**
+
+```bash
+solana config set --url https://api.devnet.solana.com
+solana-keygen new --no-bip39-passphrase # or recover existing
+solana airdrop 2 # repeat if needed for fees
+```
+
+**Anchor build & deploy**
+
+```bash
+anchor build
+anchor deploy --provider.cluster devnet
+```
+
+**Use SOL or a mock SPL token** (no cost):
+
+```bash
+# Create a mock token and mint to your wallet for demo purposes
+spl-token create-token
+spl-token create-account <TOKEN_MINT>
+spl-token mint <TOKEN_MINT> 1000000
+```
+
+Set `currency` to `SOL` or your mint symbol in the 402 `PaymentRequirements` for the MVP (judges accept devnet tokens).
+
+**Run server & dashboard**
+
+```bash
+pnpm install
+pnpm dev   # start API + dashboard
+pnpm conf  # run conformance check
+```
+
+**Note:** All payments/escrow interactions in devnet are **test‑only**; no real money leaves your wallet. If you need more test SOL, just `solana airdrop` again.
+
+---
+
+## 7) Anchor Program Scaffolds (copy‑paste starters)
+
+> Two crates under `contracts/escrow` and `contracts/reputation`. These compile but contain TODOs for logic.
+
+### contracts/escrow/src/lib.rs (scaffold)
+
+```rust
+use anchor_lang::prelude::*;
+
+declare_id!("EscroW11111111111111111111111111111111111111");
+
+#[program]
+pub mod escrow {
+    use super::*;
+
+    pub fn init_payment(
+        ctx: Context<InitPayment>,
+        call_id: String,
+        service_id: String,
+        amount: u64,
+        sla_ms: u64,
+        dispute_window_s: u64,
+    ) -> Result<()> {
+        let ec = &mut ctx.accounts.escrow_call;
+        ec.call_id = call_id;
+        ec.payer = ctx.accounts.payer.key();
+        ec.service_id = service_id;
+        ec.amount = amount;
+        ec.start_ts = Clock::get()?.unix_timestamp as u64;
+        ec.sla_ms = sla_ms;
+        ec.dispute_window_s = dispute_window_s;
+        ec.status = Status::Init as u8;
+        // TODO: transfer funds into escrow vault / token account if SPL
+        Ok(())
+    }
+
+    pub fn fulfill(
+        ctx: Context<Fulfill>,
+        response_hash: [u8; 32],
+        ts: u64,
+        provider_sig: Vec<u8>,
+    ) -> Result<()> {
+        let ec = &mut ctx.accounts.escrow_call;
+        require!(ec.status == Status::Init as u8, AssuredError::InvalidStatus);
+        // TODO: verify provider_sig against provider/pubkey metadata if desired
+        ec.response_hash = response_hash;
+        ec.delivered_ts = Some(ts);
+        ec.status = Status::Fulfilled as u8;
+        emit!(Fulfilled { call_id: ec.call_id.clone(), ts });
+        Ok(())
+    }
+
+    pub fn raise_dispute(
+        ctx: Context<RaiseDispute>,
+        kind: u8, // enum: 0 LATE, 1 NO_RESPONSE, 2 BAD_PROOF, 3 MISMATCH_HASH
+        reason_hash: [u8; 32],
+        reporter_sig: Vec<u8>,
+    ) -> Result<()> {
+        let ec = &mut ctx.accounts.escrow_call;
+        // TODO: verify reporter_sig over (call_id, kind, reason_hash)
+        ec.disputed = true;
+        emit!(Disputed { call_id: ec.call_id.clone(), kind, reason_hash });
+        Ok(())
+    }
+
+    pub fn settle(ctx: Context<Settle>) -> Result<()> {
+        let ec = &mut ctx.accounts.escrow_call;
+        let now = Clock::get()?.unix_timestamp as u64;
+        // Basic rule: release if delivered within SLA and not disputed within window
+        let should_release = match (ec.delivered_ts, ec.disputed) {
+            (Some(delivered), false) if delivered.saturating_sub(ec.start_ts) <= ec.sla_ms => true,
+            _ => false,
+        };
+        if should_release {
+            // TODO: transfer funds to provider
+            ec.status = Status::Released as u8;
+            emit!(Released { call_id: ec.call_id.clone() });
+        } else {
+            // TODO: refund payer
+            ec.status = Status::Refunded as u8;
+            emit!(Refunded { call_id: ec.call_id.clone() });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct InitPayment<'info> {
+    #[account(init, payer = payer, space = 8 + EscrowCall::MAX_LEN, seeds=[b"call", call_id.as_bytes()], bump)]
+    pub escrow_call: Account<'info, EscrowCall>;
+    #[account(mut)]
+    pub payer: Signer<'info>;
+    pub system_program: Program<'info, System>;
+}
+
+#[derive(Accounts)]
+pub struct Fulfill<'info> {
+    #[account(mut, seeds=[b"call", escrow_call.call_id.as_bytes()], bump)]
+    pub escrow_call: Account<'info, EscrowCall>;
+}
+
+#[derive(Accounts)]
+pub struct RaiseDispute<'info> {
+    #[account(mut, seeds=[b"call", escrow_call.call_id.as_bytes()], bump)]
+    pub escrow_call: Account<'info, EscrowCall>;
+    pub reporter: Signer<'info>;
+}
+
+#[derive(Accounts)]
+pub struct Settle<'info> {
+    #[account(mut, seeds=[b"call", escrow_call.call_id.as_bytes()], bump)]
+    pub escrow_call: Account<'info, EscrowCall>;
+}
+
+#[account]
+pub struct EscrowCall {
+    pub call_id: String,
+    pub payer: Pubkey,
+    pub service_id: String,
+    pub amount: u64,
+    pub start_ts: u64,
+    pub sla_ms: u64,
+    pub dispute_window_s: u64,
+    pub status: u8,            // 0 init, 1 fulfilled, 2 released, 3 refunded
+    pub delivered_ts: Option<u64>,
+    pub response_hash: [u8; 32],
+    pub disputed: bool,
+}
+
+impl EscrowCall { pub const MAX_LEN: usize = 4+64 + 32 + 4+64 + 8 + 8 + 8 + 1 + 9 + 32 + 1; }
+
+#[event]
+pub struct Fulfilled { pub call_id: String, pub ts: u64 }
+#[event]
+pub struct Released { pub call_id: String }
+#[event]
+pub struct Refunded { pub call_id: String }
+#[event]
+pub struct Disputed { pub call_id: String, pub kind: u8, pub reason_hash: [u8;32] }
+
+#[error_code]
+pub enum AssuredError { #[msg("Invalid status")] InvalidStatus }
+
+#[repr(u8)]
+pub enum Status { Init=0, Fulfilled=1, Released=2, Refunded=3 }
+```
+
+### contracts/reputation/src/lib.rs (scaffold)
+
+```rust
+use anchor_lang::prelude::*;
+
+declare_id!("ReputE1111111111111111111111111111111111111");
+
+#[program]
+pub mod reputation {
+    use super::*;
+
+    pub fn update_weighted(ctx: Context<Update>, outcome: u8, weight_f32: f32) -> Result<()> {
+        let svc = &mut ctx.accounts.service;
+        let w = weight_f32.clamp(0.0, 1.0);
+        match outcome { // 0 OK, 1 LATE, 2 DISPUTED
+            0 => svc.ok += w,
+            1 => svc.late += w,
+            2 => svc.disputed += w,
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Update<'info> {
+    #[account(init_if_needed, payer = payer, space = 8 + Service::MAX_LEN, seeds=[b"svc", service_id.as_bytes()], bump)]
+    pub service: Account<'info, Service>;
+    #[account(mut)]
+    pub payer: Signer<'info>;
+    pub system_program: Program<'info, System>;
+    /// CHECK: provided by client
+    pub service_id: AccountInfo<'info>;
+}
+
+#[account]
+pub struct Service {
+    pub ok: f32,
+    pub late: f32,
+    pub disputed: f32,
+}
+
+impl Service { pub const MAX_LEN: usize = 4*3; }
+```
+
+> Note: SPL token escrow vaults, CPI to token program, and strict PDA seeds for `service_id` can be added if time permits. For MVP, SOL escrow is fine on devnet.
+
+---
+
+## 8) Demo Video Script (Shot‑by‑shot with Commands)
+
+**Target length:** ≤ 3:00
+
+**00:00–00:10 — Hook**
+Slide: “x402‑Assured — Safe payments for agents (escrow + disputes + reputation)”
+
+**00:10–00:30 — Problem**
+Narration: “x402 enables instant payments, but there’s no recourse against slow/bad services. We add escrow, SLA enforcement, and shared reputation—spec‑compatible.”
+
+**00:30–01:05 — Good Path (release)**
+Terminal:
+
+```bash
+pnpm dev # server + dashboard
+npx assured402 conformance http://localhost:3000/api/good
+node demo/good-demo.ts
+```
+
+Show: 402 JSON with `assured` block → SDK pays → retry → `200 OK` → dashboard increments **OK**.
+
+**01:05–01:45 — Bad Path (refund + dispute)**
+Terminal:
+
+```bash
+node demo/bad-demo.ts
+```
+
+Show: SLA miss → `raise_dispute` auto‑fires → `settle` refunds payer → dashboard increments **DISPUTED**.
+
+**01:45–02:15 — Second Agent refuses low‑rep**
+Terminal:
+
+```bash
+node demo/bad-demo.ts --agent=agentB --policy=strict
+```
+
+Show: SDK queries on‑chain score → below threshold → abort before paying: “refused: reputation 0.32 < 0.8”.
+
+**02:15–02:40 — Fallback Routing**
+Terminal:
+
+```bash
+node demo/fallback-demo.ts
+```
+
+Show: request to `/api/bad` includes `altService` → SDK routes to mirror → success, no dispute.
+
+**02:40–03:00 — Wrap**
+Slide: “Open source • Devnet • Spec‑compatible • Adapters for Coinbase/Corbits” + GitHub URL.
+Narration: “x402‑Assured makes agent payments safe by default. Try the conformance CLI or drop‑in SDK.”
+
+---
+
