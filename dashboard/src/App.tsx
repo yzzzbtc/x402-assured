@@ -469,251 +469,6 @@ export default function App() {
                 )}
               </ul>
             </div>
-          </div>
-
-          <div className="space-y-6">
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-medium text-white">Playground</h2>
-                  <p className="mt-1 text-sm text-slate-400">Target any endpoint and override policy.</p>
-                </div>
-                <button
-                  type="button"
-                  className="text-xs uppercase tracking-wide text-slate-400 hover:text-slate-200"
-                  onClick={() => setPlaygroundOpen((open) => !open)}
-                >
-                  {playgroundOpen ? 'Hide' : 'Show'}
-                </button>
-              </div>
-              {playgroundOpen && (
-                <form onSubmit={handlePlaygroundSubmit} className="mt-4 space-y-4 text-sm">
-                  <label className="flex flex-col gap-2 text-slate-300">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">Endpoint</span>
-                    <div className="flex gap-2">
-                      <select
-                        value={playgroundType}
-                        onChange={(e) => setPlaygroundType(e.target.value as RunType)}
-                        className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
-                      >
-                        <option value="good">Good</option>
-                        <option value="bad">Bad</option>
-                        <option value="fallback">Fallback</option>
-                      </select>
-                      <input
-                        type="text"
-                        value={playgroundUrl}
-                        onChange={(e) => setPlaygroundUrl(e.target.value)}
-                        placeholder="/api/good"
-                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-2 font-mono text-xs text-slate-100 focus:border-slate-500 focus:outline-none"
-                      />
-                    </div>
-                  </label>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <label className="flex flex-col gap-2 text-slate-300">
-                      <span className="text-xs uppercase tracking-wide text-slate-500">Min reputation</span>
-                      <input
-                        type="number"
-                        step="0.05"
-                        min="0"
-                        max="1"
-                        value={playgroundMinReputation}
-                        onChange={(e) => setPlaygroundMinReputation(Number(e.target.value))}
-                        className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-slate-500 focus:outline-none"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-2 text-slate-300">
-                      <span className="text-xs uppercase tracking-wide text-slate-500">Max price</span>
-                      <input
-                        type="number"
-                        step="0.001"
-                        min="0"
-                        value={playgroundMaxPrice}
-                        onChange={(e) => setPlaygroundMaxPrice(Number(e.target.value))}
-                        className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-slate-500 focus:outline-none"
-                      />
-                    </label>
-                    <label className="flex items-center gap-2 text-slate-300">
-                      <input
-                        type="checkbox"
-                        checked={playgroundRequireSLA}
-                        onChange={(e) => setPlaygroundRequireSLA(e.target.checked)}
-                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 accent-slate-300"
-                      />
-                      <span className="text-xs uppercase tracking-wide text-slate-500">Require SLA</span>
-                    </label>
-                  </div>
-                <button
-                  type="submit"
-                  disabled={running !== null}
-                  className="w-full rounded-xl bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
-                >
-                  {running === 'playground' ? (
-                    <span className="flex items-center justify-center gap-2 text-slate-900">
-                      <Spinner /> Running…
-                    </span>
-                  ) : (
-                    'Run custom flow'
-                  )}
-                </button>
-                </form>
-              )}
-            </div>
-
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl">
-              <h2 className="text-lg font-medium text-white">Quick Actions</h2>
-              <p className="mt-1 text-sm text-slate-400">Simulate requests via the SDK.</p>
-              <div className="mt-4 flex flex-col gap-3">
-                {(Object.keys(RUN_LABELS) as RunType[]).map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => handleQuickRun(type)}
-                    disabled={running !== null}
-                    className="rounded-xl bg-slate-800 px-4 py-3 text-left font-medium text-slate-100 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-900 disabled:text-slate-500"
-                  >
-                    {running === type ? (
-                      <span className="flex items-center gap-2 text-slate-200">
-                        <Spinner /> Running…
-                      </span>
-                    ) : (
-                      RUN_LABELS[type]
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl">
-              <h2 className="text-lg font-medium text-white">curl Snippets</h2>
-              {curlCommands ? (
-                <div className="mt-4 space-y-4 text-xs text-slate-300">
-                  <div>
-                    <span className="text-slate-400">1 — Request requirements</span>
-                    <pre className="mt-1 whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-950 p-3">
-                      {curlCommands.initial}
-                    </pre>
-                  </div>
-                  <div>
-                    <span className="text-slate-400">2 — Retry with receipt</span>
-                    <pre className="mt-1 whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-950 p-3">
-                      {curlCommands.retry}
-                    </pre>
-                    {lastRunInfo?.header && (
-                      <button
-                        type="button"
-                        className="mt-2 rounded border border-slate-700 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-400 hover:text-slate-200"
-                        onClick={() => copyToClipboard(lastRunInfo.header ?? '')}
-                      >
-                        Copy last receipt
-                      </button>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-slate-500">Receipt headers rotate per run; inspect the transcript drawer for the exact base64 payload.</p>
-                </div>
-              ) : (
-                <p className="mt-4 text-sm text-slate-400">Trigger a flow to generate curl commands.</p>
-              )}
-            </div>
-
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl">
-              <h2 className="text-lg font-medium text-white">Conformance Tester</h2>
-              <form
-                className="mt-3 space-y-4 text-sm"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void handleConformanceTest();
-                }}
-              >
-                <label className="flex flex-col gap-2 text-slate-300">
-                  <span className="text-xs uppercase tracking-wide text-slate-500">Endpoint</span>
-                  <input
-                    type="text"
-                    value={conformanceUrl}
-                    onChange={(e) => setConformanceUrl(e.target.value)}
-                    placeholder="http://localhost:3000/api/good"
-                    className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-2 font-mono text-xs text-slate-100 focus:border-slate-500 focus:outline-none"
-                  />
-                </label>
-                <label className="flex flex-col gap-2 text-slate-300">
-                  <span className="text-xs uppercase tracking-wide text-slate-500">Policy preset</span>
-                  <select
-                    value={conformancePolicy}
-                    onChange={(e) => setConformancePolicy(e.target.value as 'strict' | 'balanced' | 'cheap')}
-                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
-                  >
-                    <option value="strict">Strict</option>
-                    <option value="balanced">Balanced</option>
-                    <option value="cheap">Cheap</option>
-                  </select>
-                </label>
-                <button
-                  type="submit"
-                  disabled={conformanceRunning}
-                  className="w-full rounded-xl bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
-                >
-                  {conformanceRunning ? (
-                    <span className="flex items-center justify-center gap-2 text-slate-900">
-                      <Spinner /> Testing…
-                    </span>
-                  ) : (
-                    'Test endpoint'
-                  )}
-                </button>
-              </form>
-              {conformanceResult && (
-                <div className="mt-4 space-y-3 text-xs text-slate-300">
-                  <div className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold ${checkStatusClass(conformanceResult.ok)}`}>
-                    {conformanceResult.ok ? 'Pass' : 'Check failures'}
-                  </div>
-                  <ul className="space-y-2">
-                    {CHECK_ITEMS.map(({ key, label }) => {
-                      const status = conformanceResult.checks[key];
-                      return (
-                        <li
-                          key={key}
-                          className="flex items-center justify-between rounded-xl border border-slate-800/70 bg-slate-950/40 px-3 py-2"
-                        >
-                          <div className="flex items-center gap-2 text-slate-200">
-                            <span
-                              className={`h-2.5 w-2.5 rounded-full ${status.passed ? 'bg-emerald-400' : 'bg-rose-400'}`}
-                            />
-                            <span>{label}</span>
-                          </div>
-                          {status.detail && <span className="text-[11px] text-slate-400">{status.detail}</span>}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  {conformanceResult.receipt?.callId && (
-                    <button
-                      type="button"
-                      className="rounded border border-slate-700 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-400 hover:text-slate-200"
-                      onClick={() => setSelectedCallId(conformanceResult.receipt?.callId ?? null)}
-                    >
-                      View transcript ({conformanceResult.receipt.callId})
-                    </button>
-                  )}
-                  {conformanceResult.paymentResponse && (
-                    <div className="rounded-xl border border-slate-700 bg-slate-950 p-3 text-[11px] text-slate-300">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">Settlement header</p>
-                      <div className="mt-2 flex items-center gap-3 font-mono">
-                        <span className="break-all text-[10px]">
-                          {maskHeader(conformanceResult.paymentResponse)}
-                        </span>
-                        <button
-                          type="button"
-                          className="rounded border border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400 hover:text-slate-200"
-                          onClick={() => copyToClipboard(conformanceResult.paymentResponse ?? '')}
-                        >
-                          Copy
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
 
             {selectedCall && (
               <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-xl">
@@ -993,6 +748,251 @@ export default function App() {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="space-y-6">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-medium text-white">Playground</h2>
+                  <p className="mt-1 text-sm text-slate-400">Target any endpoint and override policy.</p>
+                </div>
+                <button
+                  type="button"
+                  className="text-xs uppercase tracking-wide text-slate-400 hover:text-slate-200"
+                  onClick={() => setPlaygroundOpen((open) => !open)}
+                >
+                  {playgroundOpen ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              {playgroundOpen && (
+                <form onSubmit={handlePlaygroundSubmit} className="mt-4 space-y-4 text-sm">
+                  <label className="flex flex-col gap-2 text-slate-300">
+                    <span className="text-xs uppercase tracking-wide text-slate-500">Endpoint</span>
+                    <div className="flex gap-2">
+                      <select
+                        value={playgroundType}
+                        onChange={(e) => setPlaygroundType(e.target.value as RunType)}
+                        className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
+                      >
+                        <option value="good">Good</option>
+                        <option value="bad">Bad</option>
+                        <option value="fallback">Fallback</option>
+                      </select>
+                      <input
+                        type="text"
+                        value={playgroundUrl}
+                        onChange={(e) => setPlaygroundUrl(e.target.value)}
+                        placeholder="/api/good"
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-2 font-mono text-xs text-slate-100 focus:border-slate-500 focus:outline-none"
+                      />
+                    </div>
+                  </label>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label className="flex flex-col gap-2 text-slate-300">
+                      <span className="text-xs uppercase tracking-wide text-slate-500">Min reputation</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        max="1"
+                        value={playgroundMinReputation}
+                        onChange={(e) => setPlaygroundMinReputation(Number(e.target.value))}
+                        className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-slate-500 focus:outline-none"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-2 text-slate-300">
+                      <span className="text-xs uppercase tracking-wide text-slate-500">Max price</span>
+                      <input
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        value={playgroundMaxPrice}
+                        onChange={(e) => setPlaygroundMaxPrice(Number(e.target.value))}
+                        className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 focus:border-slate-500 focus:outline-none"
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={playgroundRequireSLA}
+                        onChange={(e) => setPlaygroundRequireSLA(e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 accent-slate-300"
+                      />
+                      <span className="text-xs uppercase tracking-wide text-slate-500">Require SLA</span>
+                    </label>
+                  </div>
+                <button
+                  type="submit"
+                  disabled={running !== null}
+                  className="w-full rounded-xl bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+                >
+                  {running === 'playground' ? (
+                    <span className="flex items-center justify-center gap-2 text-slate-900">
+                      <Spinner /> Running…
+                    </span>
+                  ) : (
+                    'Run custom flow'
+                  )}
+                </button>
+                </form>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl">
+              <h2 className="text-lg font-medium text-white">Quick Actions</h2>
+              <p className="mt-1 text-sm text-slate-400">Simulate requests via the SDK.</p>
+              <div className="mt-4 flex flex-col gap-3">
+                {(Object.keys(RUN_LABELS) as RunType[]).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => handleQuickRun(type)}
+                    disabled={running !== null}
+                    className="rounded-xl bg-slate-800 px-4 py-3 text-left font-medium text-slate-100 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-900 disabled:text-slate-500"
+                  >
+                    {running === type ? (
+                      <span className="flex items-center gap-2 text-slate-200">
+                        <Spinner /> Running…
+                      </span>
+                    ) : (
+                      RUN_LABELS[type]
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl">
+              <h2 className="text-lg font-medium text-white">curl Snippets</h2>
+              {curlCommands ? (
+                <div className="mt-4 space-y-4 text-xs text-slate-300">
+                  <div>
+                    <span className="text-slate-400">1 — Request requirements</span>
+                    <pre className="mt-1 whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-950 p-3">
+                      {curlCommands.initial}
+                    </pre>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">2 — Retry with receipt</span>
+                    <pre className="mt-1 whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-950 p-3">
+                      {curlCommands.retry}
+                    </pre>
+                    {lastRunInfo?.header && (
+                      <button
+                        type="button"
+                        className="mt-2 rounded border border-slate-700 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-400 hover:text-slate-200"
+                        onClick={() => copyToClipboard(lastRunInfo.header ?? '')}
+                      >
+                        Copy last receipt
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500">Receipt headers rotate per run; inspect the transcript drawer for the exact base64 payload.</p>
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-slate-400">Trigger a flow to generate curl commands.</p>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl">
+              <h2 className="text-lg font-medium text-white">Conformance Tester</h2>
+              <form
+                className="mt-3 space-y-4 text-sm"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleConformanceTest();
+                }}
+              >
+                <label className="flex flex-col gap-2 text-slate-300">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Endpoint</span>
+                  <input
+                    type="text"
+                    value={conformanceUrl}
+                    onChange={(e) => setConformanceUrl(e.target.value)}
+                    placeholder="http://localhost:3000/api/good"
+                    className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-2 font-mono text-xs text-slate-100 focus:border-slate-500 focus:outline-none"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-slate-300">
+                  <span className="text-xs uppercase tracking-wide text-slate-500">Policy preset</span>
+                  <select
+                    value={conformancePolicy}
+                    onChange={(e) => setConformancePolicy(e.target.value as 'strict' | 'balanced' | 'cheap')}
+                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
+                  >
+                    <option value="strict">Strict</option>
+                    <option value="balanced">Balanced</option>
+                    <option value="cheap">Cheap</option>
+                  </select>
+                </label>
+                <button
+                  type="submit"
+                  disabled={conformanceRunning}
+                  className="w-full rounded-xl bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+                >
+                  {conformanceRunning ? (
+                    <span className="flex items-center justify-center gap-2 text-slate-900">
+                      <Spinner /> Testing…
+                    </span>
+                  ) : (
+                    'Test endpoint'
+                  )}
+                </button>
+              </form>
+              {conformanceResult && (
+                <div className="mt-4 space-y-3 text-xs text-slate-300">
+                  <div className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold ${checkStatusClass(conformanceResult.ok)}`}>
+                    {conformanceResult.ok ? 'Pass' : 'Check failures'}
+                  </div>
+                  <ul className="space-y-2">
+                    {CHECK_ITEMS.map(({ key, label }) => {
+                      const status = conformanceResult.checks[key];
+                      return (
+                        <li
+                          key={key}
+                          className="flex items-center justify-between rounded-xl border border-slate-800/70 bg-slate-950/40 px-3 py-2"
+                        >
+                          <div className="flex items-center gap-2 text-slate-200">
+                            <span
+                              className={`h-2.5 w-2.5 rounded-full ${status.passed ? 'bg-emerald-400' : 'bg-rose-400'}`}
+                            />
+                            <span>{label}</span>
+                          </div>
+                          {status.detail && <span className="text-[11px] text-slate-400">{status.detail}</span>}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {conformanceResult.receipt?.callId && (
+                    <button
+                      type="button"
+                      className="rounded border border-slate-700 px-2 py-1 text-[10px] uppercase tracking-wide text-slate-400 hover:text-slate-200"
+                      onClick={() => setSelectedCallId(conformanceResult.receipt?.callId ?? null)}
+                    >
+                      View transcript ({conformanceResult.receipt.callId})
+                    </button>
+                  )}
+                  {conformanceResult.paymentResponse && (
+                    <div className="rounded-xl border border-slate-700 bg-slate-950 p-3 text-[11px] text-slate-300">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Settlement header</p>
+                      <div className="mt-2 flex items-center gap-3 font-mono">
+                        <span className="break-all text-[10px]">
+                          {maskHeader(conformanceResult.paymentResponse)}
+                        </span>
+                        <button
+                          type="button"
+                          className="rounded border border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400 hover:text-slate-200"
+                          onClick={() => copyToClipboard(conformanceResult.paymentResponse ?? '')}
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </section>
         </>
