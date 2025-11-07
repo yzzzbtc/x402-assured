@@ -7,7 +7,7 @@
 
 **Wire-compatible x402 extension** with streaming payments, bonded providers, and verified fallback mesh.
 
-## 🚀 Live Demo
+## Live Demo
 
 **Dashboard:** [https://x402-assured.vercel.app](https://x402-assured.vercel.app)
 **Backend API:** [https://x402-assured-production.up.railway.app](https://x402-assured-production.up.railway.app)
@@ -21,7 +21,7 @@ Try the interactive demo to see all 5 features in action:
 
 ---
 
-## 📖 Overview
+## Overview
 
 Plain x402 wires funds instantly with **no recourse**. x402-Assured extends the protocol with:
 
@@ -36,9 +36,9 @@ All while maintaining **wire-compatibility** with the x402 spec.
 
 ---
 
-## ✨ Five Differentiating Features
+## Five Differentiating Features
 
-### 1. 🔐 Assured-Trace (Cryptographic Audit Trail)
+### 1. Assured-Trace (Cryptographic Audit Trail)
 
 Every response is signed with Ed25519 signatures, creating an unforgeable audit trail. Clients can verify that the server actually delivered the claimed response hash at the claimed time.
 
@@ -51,7 +51,7 @@ const isValid = verifyTrace(callId, responseHash, deliveredAt, signature, signer
 
 ---
 
-### 2. 🌊 Assured-Stream (Incremental Payment Releases)
+### 2. Assured-Stream (Incremental Payment Releases)
 
 For long-running operations, funds are released incrementally as progress milestones are reached. Reduces risk for both parties during streaming responses or multi-step workflows.
 
@@ -71,7 +71,7 @@ For long-running operations, funds are released incrementally as progress milest
 
 ---
 
-### 3. 💎 Assured-Bond (Stake-Based Reputation)
+### 3. Assured-Bond (Stake-Based Reputation)
 
 Providers can lock SOL on-chain as collateral, signaling commitment to quality. Bonds are slashed on disputes, creating economic incentive for good behavior.
 
@@ -84,7 +84,7 @@ bond_create(ctx, lamports: 1_500_000_000)
 
 ---
 
-### 4. 📊 SLA Scorecards (P95 Latency Tracking)
+### 4. SLA Scorecards (P95 Latency Tracking)
 
 On-chain reputation tracks EWMA and P95 latency estimates. Clients can enforce maximum latency policies before payment, filtering out slow or unreliable providers.
 
@@ -102,7 +102,7 @@ const client = new Assured402Client({
 
 ---
 
-### 5. 🔗 Signed Fallback Mesh (Verified Mirrors)
+### 5. Signed Fallback Mesh (Verified Mirrors)
 
 Providers advertise signed mirror URLs for redundancy. Clients verify signatures before routing, ensuring mirrors are authentic and not malicious redirects.
 
@@ -121,7 +121,7 @@ Providers advertise signed mirror URLs for redundancy. Clients verify signatures
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ### On-Chain Components (Solana Devnet)
 
@@ -165,7 +165,7 @@ Client                Server                Solana
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -203,7 +203,7 @@ pnpm demo:stream    # Streaming payment with partial releases
 
 ---
 
-## 🎮 Dashboard Features
+## Dashboard Features
 
 Visit the dashboard to:
 
@@ -216,7 +216,7 @@ Visit the dashboard to:
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 Comprehensive guides available in `/docs`:
 
@@ -230,7 +230,7 @@ Comprehensive guides available in `/docs`:
 
 ---
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables
 
@@ -259,7 +259,7 @@ See [docs/SERVER.md](docs/SERVER.md) for full configuration details.
 
 ---
 
-## 📦 SDK Usage
+## SDK Usage
 
 ```typescript
 import { Assured402Client, balanced } from 'x402-assured/sdk';
@@ -286,7 +286,7 @@ const data = await response.json();
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # TypeScript compilation check
@@ -303,7 +303,7 @@ pnpm conf http://localhost:3000/api/good_stream
 
 ---
 
-## 🛠️ Technology Stack
+## Technology Stack
 
 - **Blockchain:** Solana (Devnet)
 - **Smart Contracts:** Anchor Framework (Rust)
@@ -314,19 +314,19 @@ pnpm conf http://localhost:3000/api/good_stream
 
 ---
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 This project was built for the Solana x402 Hackathon. Contributions, issues, and feature requests are welcome!
 
 ---
 
-## 🔗 Links
+## Links
 
 - **Live Dashboard:** [https://x402-assured.vercel.app](https://x402-assured.vercel.app)
 - **Backend API:** [https://x402-assured-production.up.railway.app](https://x402-assured-production.up.railway.app)
@@ -336,4 +336,4 @@ This project was built for the Solana x402 Hackathon. Contributions, issues, and
 
 ---
 
-**Built with ❤️ for the Solana x402 Hackathon**
+**Built for the Solana x402 Hackathon**
