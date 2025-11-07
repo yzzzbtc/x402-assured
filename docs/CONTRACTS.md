@@ -17,7 +17,16 @@ Two Anchor programs: **escrow** and **reputation**.
 ## Reputation
 - **Program ID:** `8QFXHzWC1hDC7GQTNqBhsVRLURpYfXFBzT5Vb4NTxDh5`
 - **IDL:** `contracts/reputation/target/idl/reputation.json`
-- **Accounts:** `Service { ok: f32, late: f32, disputed: f32 }`
-- **Instruction:** `update_weighted(serviceId, outcome, weightF32)`
+- **Accounts:** `Service { ok: f32, late: f32, disputed: f32, bond_balance: u64, ewma_latency_ms: u64, p95_est_ms: u64 }`
+- **Instructions:**
+  - `update_weighted(serviceId, outcome, weightF32)` - Update reputation score
+  - `bond_deposit(amount: u64)` - Deposit bond funds (owner only)
+  - `bond_withdraw(amount: u64)` - Withdraw bond funds (owner only, requires non-negative balance)
+  - `bond_slash(amount: u64)` - Slash bond on refund with evidence (callable from escrow via CPI)
+  - `update_latency(sample_ms: u64)` - Update EWMA and p95 latency estimates
 
-See implementations in `contracts/escrow/src/lib.rs` and `contracts/reputation/src/lib.rs`. Unit tests cover the release/refund path selection and reputation tallies.
+See implementations in `contracts/escrow/src/lib.rs` and `contracts/reputation/src/lib.rs`. Unit tests cover:
+- Partial release increments `units_released` and emits `PartialReleased` event
+- Refund path slashes bond when `disputed = true`
+- Latency updates compute EWMA and p95 estimates
+- Release/refund path selection and reputation tallies

@@ -40,6 +40,45 @@ Call out the emitted call IDs and settlement headers, relate them to the dashboa
 ### Wrap (2:35–3:00)
 Return to the dashboard header or slide.
 
-- Reinforce “Escrow · Disputes · Reputation” bullets.
+- Reinforce "Escrow · Disputes · Reputation" bullets.
 - Mention adapters (native / Coinbase / Corbits) and on-chain mode toggle.
 - Prompt to clone + `pnpm dev` for a one-command boot.
+
+## Differentiators
+
+x402-Assured extends the x402 spec with five new capabilities while maintaining wire compatibility:
+
+### 1. **Assured-Trace** (Verifiable Response Proof)
+- Every successful response includes an ed25519 signature over `callId|responseHash|timestamp`
+- Client-side verification via SDK `verifyTrace()` function
+- Transcript drawer shows "Verify Trace" button → green ✓ badge when valid
+- Enables cryptographic proof of delivery for dispute resolution
+
+### 2. **Assured-Stream** (Partial/Streaming Settlement)
+- Escrow supports `totalUnits` field for incremental payment releases
+- Server calls `fulfill_partial` multiple times before final settle
+- Dashboard displays stream timeline visualization with unit-by-unit progression
+- CLI `demo:stream` shows 3 partial releases then final settlement
+- Ideal for long-running AI model inference or data streaming
+
+### 3. **Assured-Bond** (Provider Micro-Stake)
+- Providers deposit bond collateral on-chain via `bond_deposit` instruction
+- Bonds are slashed on refund with evidence (via `bond_slash` CPI from escrow)
+- Services table shows "Bonded" badge for providers with active bonds
+- Bad actors lose collateral; increases trust for new service providers
+
+### 4. **SLA Scorecards** (p50/p95 Latency)
+- Reputation contract tracks EWMA latency and p95 estimates
+- `update_latency` instruction updates metrics with each call
+- Services table displays p95 chips (e.g., "~1200ms p95")
+- SDK policy enforcement: `slaP95MaxMs` refuses payment if latency too high
+- Enables data-driven service selection
+
+### 5. **Signed Fallback Mesh** (Mirrors with Signatures)
+- Payment requirements include `assured.mirrors[]` with ed25519 signatures
+- Each mirror signature proves: `serviceId|mirrorURL` signed by provider
+- Client verifies mirror signatures before routing fallback traffic
+- Prevents MITM attacks on fallback endpoints
+- Dashboard shows "Routed via signed mirror" badge when applicable
+
+**Key Design Principle:** All extensions live under the namespaced `assured` object, preserving compatibility with standard x402 clients.

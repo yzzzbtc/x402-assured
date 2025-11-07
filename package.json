@@ -10,7 +10,8 @@
     "cli": "tsx tools/cli/index.ts",
     "conf": "tsx tools/cli/index.ts conformance",
     "demo:good": "tsx tools/cli/index.ts demo good",
-    "demo:bad": "tsx tools/cli/index.ts demo bad"
+    "demo:bad": "tsx tools/cli/index.ts demo bad",
+    "demo:stream": "tsx tools/cli/index.ts demo stream"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

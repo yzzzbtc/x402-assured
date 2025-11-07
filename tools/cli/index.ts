@@ -8,6 +8,8 @@ import {
   balanced,
   cheap,
   strict,
+  verifyTrace,
+  verifyMirrorSig,
   type Policy,
 } from '../../sdk/ts/index.ts';
 import {
@@ -75,6 +77,50 @@ program
         const parsed = decodeBase64Json(paymentResponse);
         console.log(`→ settlement header confirms mode=${parsed.mode ?? 'mock'}`);
       }
+
+      // Check trace signature if present
+      const responseBody = await safeJson(settled);
+      if (responseBody && typeof responseBody === 'object' && 'trace' in responseBody) {
+        const trace = (responseBody as any).trace;
+        if (trace && trace.responseHash && trace.signature && trace.signer) {
+          console.log('✓ trace data saved');
+          const traceValid = verifyTrace(
+            receipt?.callId ?? '',
+            trace.responseHash,
+            trace.savedAt ?? Date.now(),
+            trace.signature,
+            trace.signer
+          );
+          if (traceValid) {
+            console.log('✓ trace signature valid');
+          } else {
+            console.log('✗ trace signature invalid');
+          }
+        }
+      }
+
+      // Check mirror signatures if present
+      if (body.assured?.mirrors && Array.isArray(body.assured.mirrors)) {
+        console.log(`✓ ${body.assured.mirrors.length} mirror(s) advertised`);
+        let allMirrorsValid = true;
+        for (const mirror of body.assured.mirrors) {
+          if (mirror.url && mirror.sig) {
+            const valid = verifyMirrorSig(
+              body.assured.serviceId,
+              mirror.url,
+              mirror.sig,
+              body.recipient
+            );
+            if (!valid) {
+              allMirrorsValid = false;
+              console.log(`✗ mirror signature invalid for ${mirror.url}`);
+            }
+          }
+        }
+        if (allMirrorsValid) {
+          console.log('✓ all mirror signatures valid');
+        }
+      }
     } catch (err) {
       console.error('✗ conformance failed');
       console.error(err instanceof Error ? err.message : err);
@@ -84,7 +130,7 @@ program
 
 program
   .command('demo')
-  .argument('<which>', 'good|bad')
+  .argument('<which>', 'good|bad|stream')
   .option('-p, --policy <preset>', 'strict|balanced|cheap', 'balanced')
   .action(async (which, options) => {
     const url = resolveDemoUrl(which);
@@ -102,6 +148,20 @@ program
       const body = await safeJson(response);
       if (response.ok) {
         console.log(`${label} outcome: released`);
+
+        // Special handling for stream responses
+        if (which === 'stream' && body && typeof body === 'object' && 'stream' in body) {
+          const streamData = body.stream as any;
+          if (streamData?.timeline) {
+            console.log(`\nStream Timeline (${streamData.unitsReleased}/${streamData.totalUnits} units released):`);
+            for (const event of streamData.timeline) {
+              const time = new Date(event.at).toISOString();
+              const tx = event.txSig ? ` [tx: ${event.txSig.slice(0, 8)}...]` : '';
+              console.log(`  • Unit ${event.index + 1} released at ${time}${tx}`);
+            }
+          }
+        }
+
         if (body) {
           console.log(JSON.stringify(body, null, 2));
         }
@@ -175,6 +235,9 @@ function resolveDemoUrl(which: string): string {
   }
   if (which === 'bad') {
     return 'http://localhost:3000/api/bad';
+  }
+  if (which === 'stream') {
+    return 'http://localhost:3000/api/good_stream';
   }
   throw new Error(`Unknown demo variant: ${which}`);
 }
