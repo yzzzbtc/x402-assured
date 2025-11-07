@@ -48,12 +48,14 @@ const RUN_LABELS: Record<RunType, string> = {
   good: 'Call Good',
   bad: 'Call Bad',
   fallback: 'Call Fallback',
+  stream: 'Call Good (Stream)',
 };
 
 const RUN_DEFAULT_PATH: Record<RunType, string> = {
   good: '/api/good',
   bad: '/api/bad',
   fallback: '/api/good',
+  stream: '/api/good_stream',
 };
 
 const ABOUT_POINTS = [
@@ -361,6 +363,8 @@ export default function App() {
                       <th className="px-6 py-3 text-left font-medium">OK</th>
                       <th className="px-6 py-3 text-left font-medium">Late</th>
                       <th className="px-6 py-3 text-left font-medium">Disputed</th>
+                      <th className="px-6 py-3 text-left font-medium">Bond</th>
+                      <th className="px-6 py-3 text-left font-medium">P95</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
@@ -375,11 +379,29 @@ export default function App() {
                         <td className="px-6 py-3 text-slate-200">{service.ok}</td>
                         <td className="px-6 py-3 text-slate-200">{service.late}</td>
                         <td className="px-6 py-3 text-slate-200">{service.disputed}</td>
+                        <td className="px-6 py-3">
+                          {service.hasBond ? (
+                            <span className="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300">
+                              ◆ {service.bond ?? '0.00'} SOL
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-600">—</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-3">
+                          {service.p95Ms ? (
+                            <span className="inline-flex items-center rounded-full border border-cyan-500/40 bg-cyan-500/20 px-3 py-1 text-xs font-semibold text-cyan-300">
+                              ~{service.p95Ms}ms
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-600">—</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                     {services.length === 0 && !loadingSummary && (
                       <tr>
-                        <td colSpan={5} className="px-6 py-6 text-center text-slate-500">
+                        <td colSpan={7} className="px-6 py-6 text-center text-slate-500">
                           No services tracked yet.
                         </td>
                       </tr>

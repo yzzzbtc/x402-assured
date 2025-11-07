@@ -86,7 +86,7 @@ export type CallTranscript = {
   latency?: LatencySnapshot | null;
 };
 
-export type RunType = 'good' | 'bad' | 'fallback';
+export type RunType = 'good' | 'bad' | 'fallback' | 'stream';
 
 export type RunRequest = {
   type: RunType;
