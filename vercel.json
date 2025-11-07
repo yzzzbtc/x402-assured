@@ -1,0 +1,12 @@
+{
+  "buildCommand": "cd dashboard && pnpm install && pnpm build",
+  "outputDirectory": "dashboard/dist",
+  "installCommand": "pnpm install",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
