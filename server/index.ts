@@ -330,6 +330,14 @@ fastify.get('/api/good_stream', async (req, reply) => {
   let cumulativeUnits = streamState.unitsReleased ?? 0;
   const segments = buildStreamSegments();
 
+  const useOnchainSettlement = shouldAttemptOnchain(receipt);
+  if (settlementManager.mode === 'onchain' && !useOnchainSettlement) {
+    req.log.warn(
+      { callId: receipt.callId, txSig: receipt.txSig },
+      'skipping on-chain stream fulfillment because receipt is mock or missing'
+    );
+  }
+
   for (const segment of segments) {
     const chunkPayload = {
       index: streamState.chunks.length + 1,
@@ -352,7 +360,9 @@ fastify.get('/api/good_stream', async (req, reply) => {
       signature,
     };
     if (settlementManager.mode === 'onchain') {
-      txSig = await settlementManager.fulfillPartial(partialRequest);
+      if (useOnchainSettlement) {
+        txSig = await settlementManager.fulfillPartial(partialRequest);
+      }
     } else {
       await settlementManager.fulfillPartial(partialRequest);
     }
@@ -399,7 +409,7 @@ fastify.get('/api/good_stream', async (req, reply) => {
     callId: receipt.callId,
     responseHash: record.responseHash,
     fulfilledAt,
-    mode: settlementManager.mode,
+    mode: useOnchainSettlement ? 'onchain' : 'mock',
     partials: streamState.chunks.length,
   };
   reply.header('x-payment-response', encodeResponseHeader(headerPayload));
@@ -1420,6 +1430,16 @@ async function finalizeSettlement(
     txSig: receipt.txSig,
   });
 
+  const useOnchainSettlement = shouldAttemptOnchain(receipt);
+  const shouldInvokeSettlement =
+    settlementManager.mode !== 'onchain' || useOnchainSettlement;
+  if (settlementManager.mode === 'onchain' && !useOnchainSettlement) {
+    fastify.log.warn(
+      { callId: receipt.callId, txSig: receipt.txSig },
+      'skipping on-chain fulfill because receipt is mock or missing txSig'
+    );
+  }
+
   const responseJson = JSON.stringify(payload);
   const responseHash = createHash('sha256').update(responseJson).digest();
   const deliveredAt = Date.now();
@@ -1428,13 +1448,15 @@ async function finalizeSettlement(
   const traceSignature = traceSigner.sign(traceMessage);
 
   let fulfillSignature: string | null = null;
-  if (!seenFulfillments.has(receipt.callId)) {
+  if (!seenFulfillments.has(receipt.callId) && shouldInvokeSettlement) {
     fulfillSignature = await settlementManager.fulfill({
       callId: receipt.callId,
       responseHash: new Uint8Array(responseHash),
       deliveredAt,
       signature: traceSignature,
     });
+    seenFulfillments.add(receipt.callId);
+  } else if (!shouldInvokeSettlement) {
     seenFulfillments.add(receipt.callId);
   }
 
@@ -1446,7 +1468,7 @@ async function finalizeSettlement(
     callId: receipt.callId,
     responseHash: responseHashHex,
     fulfilledAt: deliveredAt,
-    mode: settlementManager.mode,
+    mode: useOnchainSettlement ? 'onchain' : 'mock',
   };
   record.responseHash = headerPayload.responseHash;
   record.trace = {
@@ -1461,6 +1483,16 @@ async function finalizeSettlement(
   record.latency = deriveLatencySnapshot(serviceId);
 
   return encodeResponseHeader(headerPayload);
+}
+
+function shouldAttemptOnchain(receipt: PaymentReceipt): boolean {
+  if (settlementManager.mode !== 'onchain') {
+    return false;
+  }
+  if (!receipt.txSig || receipt.txSig.length < 32) {
+    return false;
+  }
+  return !receipt.txSig.startsWith('mock-');
 }
 
 function encodeResponseHeader(data: Record<string, unknown>): string {

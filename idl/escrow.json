@@ -323,7 +323,35 @@
         28,
         141,
         36
-      ]
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "call_id", "type": "string" },
+          { "name": "payer", "type": "pubkey" },
+          { "name": "service_id", "type": "string" },
+          { "name": "provider", "type": "pubkey" },
+          { "name": "amount", "type": "u64" },
+          { "name": "start_ts", "type": "u64" },
+          { "name": "sla_ms", "type": "u64" },
+          { "name": "dispute_window_s", "type": "u64" },
+          { "name": "status", "type": "u8" },
+          {
+            "name": "delivered_ts",
+            "type": { "option": "u64" }
+          },
+          {
+            "name": "response_hash",
+            "type": {
+              "array": ["u8", 32]
+            }
+          },
+          { "name": "disputed", "type": "bool" },
+          { "name": "total_units", "type": "u64" },
+          { "name": "units_released", "type": "u64" },
+          { "name": "provider_sig", "type": "bytes" }
+        ]
+      }
     }
   ],
   "events": [
@@ -629,6 +657,5 @@
         ]
       }
     }
-  ],
-  "accounts": []
+  ]
 }

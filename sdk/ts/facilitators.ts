@@ -68,50 +68,44 @@ export function nativeFacilitator({ connection, wallet, escrowProgramId }: Nativ
       }
 
       const callId = generateCallId(assured.serviceId);
-      const [escrowCall] = PublicKey.findProgramAddressSync(
-        [Buffer.from('call'), Buffer.from(callId)],
-        programId
-      );
-
       const amount = toLamportsBN(req.price);
       const slaMs = new BN(assured.slaMs ?? 0);
       const disputeWindow = new BN(assured.disputeWindowS ?? 0);
       const providerKey = new PublicKey(req.recipient);
       const totalUnits = new BN(Math.max(1, assured.totalUnits ?? 1));
 
-      // Manual transaction building to bypass Anchor's broken IDL handling
-      const instructionData = encodeInitPaymentInstruction(
-        callId,
-        assured.serviceId,
-        amount,
-        slaMs,
-        disputeWindow,
-        totalUnits
+      // Use Anchor's Program class to properly handle init constraint
+      const provider = new AnchorProvider(connection, wallet, {});
+      const program = new Program(
+        { ...(escrowIdlJson as any), address: programId.toBase58() },
+        provider
       );
 
-      const instruction = new TransactionInstruction({
-        keys: [
-          { pubkey: escrowCall, isSigner: false, isWritable: true },
-          { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
-          { pubkey: providerKey, isSigner: false, isWritable: false },
-          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-        ],
-        programId,
-        data: instructionData,
-      });
+      const [escrowCall] = PublicKey.findProgramAddressSync(
+        [Buffer.from('call'), Buffer.from(callId, 'utf8')],
+        programId
+      );
 
-      const transaction = new Transaction().add(instruction);
-      transaction.feePayer = wallet.publicKey;
-      const { blockhash } = await connection.getLatestBlockhash();
-      transaction.recentBlockhash = blockhash;
+      const tx = await program.methods
+        .initPayment(
+          callId,
+          assured.serviceId,
+          amount,
+          slaMs,
+          disputeWindow,
+          totalUnits
+        )
+        .accounts({
+          escrowCall,
+          payer: wallet.publicKey,
+          provider: providerKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
 
-      const signed = await wallet.signTransaction(transaction);
-      const txSig = await connection.sendRawTransaction(signed.serialize());
-      await connection.confirmTransaction(txSig);
+      const headerValue = encodePaymentHeader({ callId, txSig: tx, facilitator: 'native' });
 
-      const headerValue = encodePaymentHeader({ callId, txSig, facilitator: 'native' });
-
-      return { callId, txSig, headerValue };
+      return { callId, txSig: tx, headerValue };
     },
     async settle(_proof) {
       // Native facilitator leaves settlement to the provider webhook.

@@ -2,6 +2,8 @@
 import { Command } from 'commander';
 import assert from 'node:assert';
 import Ajv from 'ajv';
+import { Connection, Keypair } from '@solana/web3.js';
+import { readFileSync } from 'node:fs';
 
 import {
   Assured402Client,
@@ -16,6 +18,7 @@ import {
   type Facilitator,
   type PaymentProof,
   type PaymentRequirements,
+  nativeFacilitator,
 } from '../../sdk/ts/facilitators.ts';
 
 const program = new Command();
@@ -208,8 +211,42 @@ function paymentRequirementsSchema() {
   };
 }
 
-function createClient(preset: string): { client: Assured402Client; facilitator: CliMockFacilitator } {
+function createClient(preset: string): { client: Assured402Client; facilitator: any } {
   const policy = resolvePolicyPreset(preset);
+
+  // Support onchain mode via env var
+  if (process.env.ASSURED_MODE === 'onchain' && process.env.ASSURED_PROVIDER_KEYPAIR) {
+    const keypairPath = process.env.ASSURED_PROVIDER_KEYPAIR;
+    const keypairData = JSON.parse(readFileSync(keypairPath, 'utf8'));
+    const wallet = Keypair.fromSecretKey(new Uint8Array(keypairData));
+    const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
+
+    // Get escrow program from env or use default
+    const escrowProgramId = process.env.ASSURED_ESCROW_PROGRAM || '6zpAcx4Yo9MmDf4w8pBGez8bm47zyKuyjr5Y5QkC3ayL';
+
+    const facilitator = nativeFacilitator({
+      connection,
+      wallet: {
+        publicKey: wallet.publicKey,
+        signTransaction: async (tx) => {
+          tx.sign(wallet);
+          return tx;
+        },
+        signAllTransactions: async (txs) => {
+          for (const tx of txs) {
+            tx.sign(wallet);
+          }
+          return txs;
+        },
+      },
+      escrowProgramId,
+    });
+
+    const client = new Assured402Client({ facilitator, policy });
+    return { client, facilitator };
+  }
+
+  // Default mock mode
   const facilitator = new CliMockFacilitator();
   const client = new Assured402Client({ facilitator, policy });
   return { client, facilitator };
@@ -230,14 +267,15 @@ function resolvePolicyPreset(preset: string): Policy {
 }
 
 function resolveDemoUrl(which: string): string {
+  const baseUrl = process.env.ASSURED_BASE_URL || 'http://localhost:3000';
   if (which === 'good') {
-    return 'http://localhost:3000/api/good';
+    return `${baseUrl}/api/good`;
   }
   if (which === 'bad') {
-    return 'http://localhost:3000/api/bad';
+    return `${baseUrl}/api/bad`;
   }
   if (which === 'stream') {
-    return 'http://localhost:3000/api/good_stream';
+    return `${baseUrl}/api/good_stream`;
   }
   throw new Error(`Unknown demo variant: ${which}`);
 }
