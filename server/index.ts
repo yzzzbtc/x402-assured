@@ -808,11 +808,28 @@ function loadConfig(): ServerConfig {
     ? expandPath(process.env.ASSURED_PROVIDER_KEYPAIR, home)
     : resolve(home, '.config/solana/id.json');
 
+  // Railway bug workaround: try multiple variable names
   const assuredModeRaw = process.env.ASSURED_MODE;
-  console.log('[CONFIG DEBUG] ASSURED_MODE env var:', { value: assuredModeRaw, type: typeof assuredModeRaw });
-  // Handle empty strings and null/undefined - use || instead of ?? to catch empty strings
-  const settlementMode = (assuredModeRaw?.trim() || 'mock') as 'mock' | 'onchain';
-  console.log('[CONFIG DEBUG] settlementMode resolved to:', settlementMode);
+  const x402ModeRaw = process.env.X402_MODE;
+  const settlementModeRaw = process.env.SETTLEMENT_MODE;
+  const modeRaw = process.env.MODE;
+
+  console.log('[CONFIG DEBUG] All mode-related env vars:', {
+    ASSURED_MODE: { value: assuredModeRaw, type: typeof assuredModeRaw, length: assuredModeRaw?.length },
+    X402_MODE: { value: x402ModeRaw, type: typeof x402ModeRaw, length: x402ModeRaw?.length },
+    SETTLEMENT_MODE: { value: settlementModeRaw, type: typeof settlementModeRaw, length: settlementModeRaw?.length },
+    MODE: { value: modeRaw, type: typeof modeRaw, length: modeRaw?.length },
+  });
+
+  // Try all variable names in order of preference
+  const rawValue = assuredModeRaw || x402ModeRaw || settlementModeRaw || modeRaw;
+  const settlementMode = (rawValue?.trim() || 'mock') as 'mock' | 'onchain';
+
+  console.log('[CONFIG DEBUG] settlementMode resolved to:', settlementMode, 'from variable:',
+    assuredModeRaw ? 'ASSURED_MODE' :
+    x402ModeRaw ? 'X402_MODE' :
+    settlementModeRaw ? 'SETTLEMENT_MODE' :
+    modeRaw ? 'MODE' : 'default');
 
   return {
     price: process.env.ASSURED_PRICE ?? '0.001',
