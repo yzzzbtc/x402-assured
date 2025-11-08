@@ -8,11 +8,16 @@ import { Connection, LAMPORTS_PER_SOL, PublicKey, SystemProgram } from '@solana/
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const escrowIdlJson = require('../../idl/escrow.json') as Idl;
-// Create IDL with empty accounts array to avoid Anchor coder issues
+const escrowIdlJson = require('../../idl/escrow.json');
+
+// Minimal IDL without accounts to avoid BorshCoder issues
 const escrowIdl = {
-  ...(escrowIdlJson as any),
-  accounts: [], // Empty accounts to bypass coder initialization
+  address: escrowIdlJson.address,
+  metadata: escrowIdlJson.metadata,
+  instructions: escrowIdlJson.instructions,
+  types: escrowIdlJson.types,
+  events: escrowIdlJson.events,
+  errors: escrowIdlJson.errors,
 } as Idl;
 
 export type PaymentRequirements = {

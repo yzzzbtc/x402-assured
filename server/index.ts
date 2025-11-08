@@ -6,9 +6,10 @@ import { createHash, createHmac } from 'crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import fastifyRawBody from 'fastify-raw-body';
-import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
-import { AnchorProvider, Program, Idl } from '@coral-xyz/anchor';
+import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, TransactionInstruction, Transaction, sendAndConfirmTransaction } from '@solana/web3.js';
+import { AnchorProvider, Program, Idl, BorshCoder } from '@coral-xyz/anchor';
 import BN from 'bn.js/lib/bn.js';
+import * as borsh from 'borsh';
 import Ajv from 'ajv';
 import nacl from 'tweetnacl';
 
@@ -17,11 +18,15 @@ import type { Facilitator, PaymentProof } from '../sdk/ts/facilitators.ts';
 
 import escrowIdlJson from '../idl/escrow.json' assert { type: 'json' };
 
-// Create IDL with empty accounts array to avoid Anchor coder issues
-// We only use program.methods, not program.account
+// Minimal IDL without accounts to avoid BorshCoder issues
+// We only use program.methods for instructions, not program.account for data fetching
 const escrowIdl = {
-  ...escrowIdlJson,
-  accounts: [], // Empty accounts to bypass coder initialization
+  address: escrowIdlJson.address,
+  metadata: escrowIdlJson.metadata,
+  instructions: escrowIdlJson.instructions,
+  types: escrowIdlJson.types,
+  events: escrowIdlJson.events,
+  errors: escrowIdlJson.errors,
 } as any;
 
 type ServiceKind = 'good' | 'bad';
@@ -1450,6 +1455,40 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Manual instruction encoding to bypass Anchor's BorshCoder issues with IDL spec 0.1.0
+function encodeFulfillInstruction(responseHash: Buffer, ts: BN, providerSig: Buffer): Buffer {
+  // Discriminator from IDL: [143, 2, 52, 206, 174, 164, 247, 72]
+  const discriminator = Buffer.from([143, 2, 52, 206, 174, 164, 247, 72]);
+
+  // Manually encode args: response_hash (32 bytes), ts (u64), provider_sig (bytes)
+  const tsBuffer = Buffer.alloc(8);
+  tsBuffer.writeBigUInt64LE(BigInt(ts.toString()));
+
+  // Encode provider_sig as length-prefixed bytes
+  const sigLenBuffer = Buffer.alloc(4);
+  sigLenBuffer.writeUInt32LE(providerSig.length);
+
+  return Buffer.concat([discriminator, responseHash, tsBuffer, sigLenBuffer, providerSig]);
+}
+
+function encodeFulfillPartialInstruction(chunkHash: Buffer, units: BN, ts: BN, providerSig: Buffer): Buffer {
+  // Discriminator from IDL: [127, 170, 226, 216, 143, 247, 87, 9]
+  const discriminator = Buffer.from([127, 170, 226, 216, 143, 247, 87, 9]);
+
+  // Manually encode args: chunk_hash (32 bytes), units (u64), ts (u64), provider_sig (bytes)
+  const unitsBuffer = Buffer.alloc(8);
+  unitsBuffer.writeBigUInt64LE(BigInt(units.toString()));
+
+  const tsBuffer = Buffer.alloc(8);
+  tsBuffer.writeBigUInt64LE(BigInt(ts.toString()));
+
+  // Encode provider_sig as length-prefixed bytes
+  const sigLenBuffer = Buffer.alloc(4);
+  sigLenBuffer.writeUInt32LE(providerSig.length);
+
+  return Buffer.concat([discriminator, chunkHash, unitsBuffer, tsBuffer, sigLenBuffer, providerSig]);
+}
+
 function createSettlementManager(
   cfg: ServerConfig,
   instance: FastifyInstance,
@@ -1510,17 +1549,23 @@ function createSettlementManager(
         programId
       );
       const ts = new BN(Math.floor(req.deliveredAt / 1000));
-      const responseHashArray = Array.from(req.responseHash);
+      const responseHash = Buffer.from(req.responseHash);
       const providerSig = req.signature ? Buffer.from(req.signature, 'base64') : Buffer.alloc(0);
 
-      const signature = await program.methods
-        .fulfill(responseHashArray, ts, Array.from(providerSig))
-        .accounts({
-          escrowCall,
-          provider: keypair.publicKey,
-        })
-        .signers([keypair])
-        .rpc();
+      // Manual instruction encoding
+      const instructionData = encodeFulfillInstruction(responseHash, ts, providerSig);
+
+      const instruction = new TransactionInstruction({
+        keys: [
+          { pubkey: escrowCall, isSigner: false, isWritable: true },
+          { pubkey: keypair.publicKey, isSigner: true, isWritable: false },
+        ],
+        programId,
+        data: instructionData,
+      });
+
+      const transaction = new Transaction().add(instruction);
+      const signature = await sendAndConfirmTransaction(connection, transaction, [keypair]);
       return signature;
     },
     async fulfillPartial(req) {
@@ -1529,17 +1574,23 @@ function createSettlementManager(
         programId
       );
       const ts = new BN(Math.floor(req.deliveredAt / 1000));
-      const responseHashArray = Array.from(req.chunkHash);
+      const chunkHash = Buffer.from(req.chunkHash);
       const providerSig = req.signature ? Buffer.from(req.signature, 'base64') : Buffer.alloc(0);
 
-      const signature = await program.methods
-        .fulfillPartial(responseHashArray, new BN(req.units), ts, Array.from(providerSig))
-        .accounts({
-          escrowCall,
-          provider: keypair.publicKey,
-        })
-        .signers([keypair])
-        .rpc();
+      // Manual instruction encoding
+      const instructionData = encodeFulfillPartialInstruction(chunkHash, new BN(req.units), ts, providerSig);
+
+      const instruction = new TransactionInstruction({
+        keys: [
+          { pubkey: escrowCall, isSigner: false, isWritable: true },
+          { pubkey: keypair.publicKey, isSigner: true, isWritable: false },
+        ],
+        programId,
+        data: instructionData,
+      });
+
+      const transaction = new Transaction().add(instruction);
+      const signature = await sendAndConfirmTransaction(connection, transaction, [keypair]);
       return signature;
     },
   };
