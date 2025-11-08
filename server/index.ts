@@ -1559,7 +1559,8 @@ function createSettlementManager(
   const wallet = createWallet(keypair);
   const provider = new AnchorProvider(connection, wallet, AnchorProvider.defaultOptions());
   const programId = new PublicKey(cfg.escrowProgramId);
-  const program = new (Program as any)(escrowIdl, programId, provider);
+  // Program creation removed - using manual transaction building instead
+  // const program = new (Program as any)(escrowIdl, programId, provider);
   providerPublicKey = keypair.publicKey;
   refreshProviderBalance(connection, keypair.publicKey, instance.log);
   setInterval(() => refreshProviderBalance(connection, keypair.publicKey!, instance.log), 30_000).unref?.();
