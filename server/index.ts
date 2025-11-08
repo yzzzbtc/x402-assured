@@ -810,7 +810,8 @@ function loadConfig(): ServerConfig {
 
   const assuredModeRaw = process.env.ASSURED_MODE;
   console.log('[CONFIG DEBUG] ASSURED_MODE env var:', { value: assuredModeRaw, type: typeof assuredModeRaw });
-  const settlementMode = (assuredModeRaw as 'mock' | 'onchain') ?? 'mock';
+  // Handle empty strings and null/undefined - use || instead of ?? to catch empty strings
+  const settlementMode = (assuredModeRaw?.trim() || 'mock') as 'mock' | 'onchain';
   console.log('[CONFIG DEBUG] settlementMode resolved to:', settlementMode);
 
   return {
