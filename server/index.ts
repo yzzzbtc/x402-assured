@@ -7,9 +7,8 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import fastifyRawBody from 'fastify-raw-body';
 import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, TransactionInstruction, Transaction, sendAndConfirmTransaction } from '@solana/web3.js';
-import { AnchorProvider, Program, Idl, BorshCoder } from '@coral-xyz/anchor';
+import { AnchorProvider, Program, Idl } from '@coral-xyz/anchor';
 import BN from 'bn.js/lib/bn.js';
-import * as borsh from 'borsh';
 import Ajv from 'ajv';
 import nacl from 'tweetnacl';
 
