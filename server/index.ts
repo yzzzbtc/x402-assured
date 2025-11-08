@@ -1615,7 +1615,15 @@ function loadKeypair(maybePath?: string): Keypair | null {
 
     // Try parsing as JSON array
     fastify.log.info('attempting to parse as JSON');
-    let parsed = JSON.parse(maybePath);
+
+    // Strip /app/ prefix if present (Railway bug)
+    let cleanedInput = maybePath;
+    if (maybePath.startsWith('/app/')) {
+      cleanedInput = maybePath.substring(5); // Remove '/app/'
+      fastify.log.info({ original: maybePath.substring(0, 50), cleaned: cleanedInput.substring(0, 50) }, 'stripped /app/ prefix');
+    }
+
+    let parsed = JSON.parse(cleanedInput);
     fastify.log.info({ parsedType: typeof parsed, isArray: Array.isArray(parsed) }, 'first JSON.parse result');
 
     // Handle double-encoded JSON (Railway might wrap in quotes)
