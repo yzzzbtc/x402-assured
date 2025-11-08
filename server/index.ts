@@ -1598,17 +1598,27 @@ function createSettlementManager(
 function loadKeypair(maybePath?: string): Keypair | null {
   if (!maybePath) return null;
   try {
+    // Try as file path first
     if (existsSync(maybePath)) {
       const secret = JSON.parse(readFileSync(maybePath, 'utf8')) as number[];
       return Keypair.fromSecretKey(Uint8Array.from(secret));
     }
 
-    const parsed = JSON.parse(maybePath);
+    // Try parsing as JSON array
+    let parsed = JSON.parse(maybePath);
+
+    // Handle double-encoded JSON (Railway might wrap in quotes)
+    if (typeof parsed === 'string') {
+      parsed = JSON.parse(parsed);
+    }
+
     if (Array.isArray(parsed)) {
       return Keypair.fromSecretKey(Uint8Array.from(parsed));
     }
+
+    fastify.log.warn({ type: typeof parsed, isArray: Array.isArray(parsed) }, 'parsed value is not an array');
   } catch (err) {
-    fastify.log.warn({ err }, 'failed to load keypair from path or inline array');
+    fastify.log.warn({ err, input: maybePath?.substring(0, 50) }, 'failed to load keypair from path or inline array');
   }
   return null;
 }
