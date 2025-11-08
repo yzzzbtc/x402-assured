@@ -1,24 +1,56 @@
 // sdk/ts/facilitators.ts
 import { randomBytes } from 'crypto';
 
-import type { Idl, Wallet } from '@coral-xyz/anchor';
-import { AnchorProvider, Program } from '@coral-xyz/anchor';
+import type { Wallet } from '@coral-xyz/anchor';
 import BN from 'bn.js/lib/bn.js';
-import { Connection, LAMPORTS_PER_SOL, PublicKey, SystemProgram } from '@solana/web3.js';
-import { createRequire } from 'module';
+import {
+  Connection,
+  LAMPORTS_PER_SOL,
+  PublicKey,
+  SystemProgram,
+  Transaction,
+  TransactionInstruction,
+} from '@solana/web3.js';
 
-const require = createRequire(import.meta.url);
-const escrowIdlJson = require('../../idl/escrow.json');
+// Manual instruction encoding - bypasses Anchor's broken IDL handling
+function encodeInitPaymentInstruction(
+  callId: string,
+  serviceId: string,
+  amount: BN,
+  slaMs: BN,
+  disputeWindowS: BN,
+  totalUnits: BN
+): Buffer {
+  // Discriminator for init_payment instruction
+  const discriminator = Buffer.from([123, 125, 2, 117, 145, 48, 228, 64]);
 
-// Minimal IDL without accounts to avoid BorshCoder issues
-const escrowIdl = {
-  address: escrowIdlJson.address,
-  metadata: escrowIdlJson.metadata,
-  instructions: escrowIdlJson.instructions,
-  types: escrowIdlJson.types,
-  events: escrowIdlJson.events,
-  errors: escrowIdlJson.errors,
-} as Idl;
+  // Encode strings as length-prefixed UTF-8
+  const callIdBuf = Buffer.from(callId, 'utf8');
+  const callIdLen = Buffer.alloc(4);
+  callIdLen.writeUInt32LE(callIdBuf.length);
+
+  const serviceIdBuf = Buffer.from(serviceId, 'utf8');
+  const serviceIdLen = Buffer.alloc(4);
+  serviceIdLen.writeUInt32LE(serviceIdBuf.length);
+
+  // Encode BN values as little-endian u64
+  const amountBuf = amount.toArrayLike(Buffer, 'le', 8);
+  const slaMsBuf = slaMs.toArrayLike(Buffer, 'le', 8);
+  const disputeWindowBuf = disputeWindowS.toArrayLike(Buffer, 'le', 8);
+  const totalUnitsBuf = totalUnits.toArrayLike(Buffer, 'le', 8);
+
+  return Buffer.concat([
+    discriminator,
+    callIdLen,
+    callIdBuf,
+    serviceIdLen,
+    serviceIdBuf,
+    amountBuf,
+    slaMsBuf,
+    disputeWindowBuf,
+    totalUnitsBuf,
+  ]);
+}
 
 export type PaymentRequirements = {
   price: string;
@@ -61,9 +93,7 @@ type NativeFacilitatorParams = {
 };
 
 export function nativeFacilitator({ connection, wallet, escrowProgramId }: NativeFacilitatorParams): Facilitator {
-  const provider = new AnchorProvider(connection, wallet, AnchorProvider.defaultOptions());
   const programId = new PublicKey(escrowProgramId);
-  const program = new (Program as any)(escrowIdl, programId, provider);
 
   return {
     name: 'native',
@@ -88,15 +118,35 @@ export function nativeFacilitator({ connection, wallet, escrowProgramId }: Nativ
       const providerKey = new PublicKey(req.recipient);
       const totalUnits = new BN(Math.max(1, assured.totalUnits ?? 1));
 
-      const txSig = await program.methods
-        .initPayment(callId, assured.serviceId, amount, slaMs, disputeWindow, totalUnits)
-        .accounts({
-          escrowCall,
-          payer: wallet.publicKey,
-          provider: providerKey,
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      // Manual transaction building to bypass Anchor's broken IDL handling
+      const instructionData = encodeInitPaymentInstruction(
+        callId,
+        assured.serviceId,
+        amount,
+        slaMs,
+        disputeWindow,
+        totalUnits
+      );
+
+      const instruction = new TransactionInstruction({
+        keys: [
+          { pubkey: escrowCall, isSigner: false, isWritable: true },
+          { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
+          { pubkey: providerKey, isSigner: false, isWritable: false },
+          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        ],
+        programId,
+        data: instructionData,
+      });
+
+      const transaction = new Transaction().add(instruction);
+      transaction.feePayer = wallet.publicKey;
+      const { blockhash } = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+
+      const signed = await wallet.signTransaction(transaction);
+      const txSig = await connection.sendRawTransaction(signed.serialize());
+      await connection.confirmTransaction(txSig);
 
       const headerValue = encodePaymentHeader({ callId, txSig, facilitator: 'native' });
 

@@ -139,7 +139,7 @@ program
 
     try {
       const response = await client.fetch(url);
-      const payment = facilitator.lastProof();
+      const payment = (facilitator as any).lastProof?.();
       if (payment) {
         console.log(`${label} payment callId ${payment.callId}`);
         console.log(`txSig ${payment.txSig}`);
