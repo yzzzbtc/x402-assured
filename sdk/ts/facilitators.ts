@@ -9,19 +9,13 @@ import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 const escrowIdlJson = require('../../idl/escrow.json') as Idl;
-// Reconstruct accounts field with proper type references for Anchor 0.30+
+// Create minimal IDL without accounts to avoid Anchor coder issues
 const escrowIdl = {
-  ...escrowIdlJson,
-  accounts: [
-    {
-      name: 'EscrowCall',
-      discriminator: [254, 3, 166, 184, 14, 28, 141, 36],
-      type: {
-        kind: 'struct',
-        fields: (escrowIdlJson as any).types?.find((t: any) => t.name === 'EscrowCall')?.type?.fields || []
-      }
-    }
-  ]
+  version: (escrowIdlJson as any).version,
+  name: (escrowIdlJson as any).name,
+  instructions: (escrowIdlJson as any).instructions,
+  types: (escrowIdlJson as any).types,
+  errors: (escrowIdlJson as any).errors,
 } as Idl;
 
 export type PaymentRequirements = {

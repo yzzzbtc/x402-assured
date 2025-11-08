@@ -17,19 +17,14 @@ import type { Facilitator, PaymentProof } from '../sdk/ts/facilitators.ts';
 
 import escrowIdlJson from '../idl/escrow.json' assert { type: 'json' };
 
-// Reconstruct accounts field with proper type references for Anchor 0.30+
+// Create minimal IDL without accounts to avoid Anchor coder issues
+// We only use program.methods, not program.account
 const escrowIdl = {
-  ...escrowIdlJson,
-  accounts: [
-    {
-      name: 'EscrowCall',
-      discriminator: [254, 3, 166, 184, 14, 28, 141, 36],
-      type: {
-        kind: 'struct',
-        fields: escrowIdlJson.types?.find((t: any) => t.name === 'EscrowCall')?.type?.fields || []
-      }
-    }
-  ]
+  version: escrowIdlJson.version,
+  name: escrowIdlJson.name,
+  instructions: escrowIdlJson.instructions,
+  types: escrowIdlJson.types,
+  errors: escrowIdlJson.errors,
 } as any;
 
 type ServiceKind = 'good' | 'bad';
