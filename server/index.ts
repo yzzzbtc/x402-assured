@@ -1596,29 +1596,43 @@ function createSettlementManager(
 }
 
 function loadKeypair(maybePath?: string): Keypair | null {
-  if (!maybePath) return null;
+  if (!maybePath) {
+    fastify.log.warn('loadKeypair called with empty/undefined value');
+    return null;
+  }
+
+  // Log what we received
+  const inputPreview = maybePath.length > 100 ? `${maybePath.substring(0, 100)}...` : maybePath;
+  fastify.log.info({ inputPreview, inputLength: maybePath.length, inputType: typeof maybePath }, 'loadKeypair received input');
+
   try {
     // Try as file path first
     if (existsSync(maybePath)) {
+      fastify.log.info('loading keypair from file path');
       const secret = JSON.parse(readFileSync(maybePath, 'utf8')) as number[];
       return Keypair.fromSecretKey(Uint8Array.from(secret));
     }
 
     // Try parsing as JSON array
+    fastify.log.info('attempting to parse as JSON');
     let parsed = JSON.parse(maybePath);
+    fastify.log.info({ parsedType: typeof parsed, isArray: Array.isArray(parsed) }, 'first JSON.parse result');
 
     // Handle double-encoded JSON (Railway might wrap in quotes)
     if (typeof parsed === 'string') {
+      fastify.log.info('detected double-encoded string, parsing again');
       parsed = JSON.parse(parsed);
+      fastify.log.info({ parsedType: typeof parsed, isArray: Array.isArray(parsed) }, 'second JSON.parse result');
     }
 
     if (Array.isArray(parsed)) {
+      fastify.log.info({ arrayLength: parsed.length }, 'successfully parsed keypair array');
       return Keypair.fromSecretKey(Uint8Array.from(parsed));
     }
 
     fastify.log.warn({ type: typeof parsed, isArray: Array.isArray(parsed) }, 'parsed value is not an array');
   } catch (err) {
-    fastify.log.warn({ err, input: maybePath?.substring(0, 50) }, 'failed to load keypair from path or inline array');
+    fastify.log.error({ err, errorMessage: (err as Error).message, input: maybePath?.substring(0, 100) }, 'failed to load keypair from path or inline array');
   }
   return null;
 }
