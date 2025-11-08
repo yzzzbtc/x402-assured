@@ -509,6 +509,11 @@ fastify.post('/webhook/settlement', { config: { rawBody: true } }, async (req, r
   return { ok: true };
 });
 
+// Health check endpoint for Railway
+fastify.get('/', async (_req, reply) => {
+  return reply.send({ ok: true, service: 'x402-assured', mode: config.settlementMode });
+});
+
 fastify.get('/summary', async (_req, reply) => {
   return reply.send(buildSummary());
 });
