@@ -17,14 +17,11 @@ import type { Facilitator, PaymentProof } from '../sdk/ts/facilitators.ts';
 
 import escrowIdlJson from '../idl/escrow.json' assert { type: 'json' };
 
-// Create minimal IDL without accounts to avoid Anchor coder issues
+// Create IDL with empty accounts array to avoid Anchor coder issues
 // We only use program.methods, not program.account
 const escrowIdl = {
-  version: escrowIdlJson.version,
-  name: escrowIdlJson.name,
-  instructions: escrowIdlJson.instructions,
-  types: escrowIdlJson.types,
-  errors: escrowIdlJson.errors,
+  ...escrowIdlJson,
+  accounts: [], // Empty accounts to bypass coder initialization
 } as any;
 
 type ServiceKind = 'good' | 'bad';

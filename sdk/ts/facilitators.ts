@@ -9,13 +9,10 @@ import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 const escrowIdlJson = require('../../idl/escrow.json') as Idl;
-// Create minimal IDL without accounts to avoid Anchor coder issues
+// Create IDL with empty accounts array to avoid Anchor coder issues
 const escrowIdl = {
-  version: (escrowIdlJson as any).version,
-  name: (escrowIdlJson as any).name,
-  instructions: (escrowIdlJson as any).instructions,
-  types: (escrowIdlJson as any).types,
-  errors: (escrowIdlJson as any).errors,
+  ...(escrowIdlJson as any),
+  accounts: [], // Empty accounts to bypass coder initialization
 } as Idl;
 
 export type PaymentRequirements = {
