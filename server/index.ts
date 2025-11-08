@@ -808,7 +808,10 @@ function loadConfig(): ServerConfig {
     ? expandPath(process.env.ASSURED_PROVIDER_KEYPAIR, home)
     : resolve(home, '.config/solana/id.json');
 
-  const settlementMode = (process.env.ASSURED_MODE as 'mock' | 'onchain') ?? 'mock';
+  const assuredModeRaw = process.env.ASSURED_MODE;
+  console.log('[CONFIG DEBUG] ASSURED_MODE env var:', { value: assuredModeRaw, type: typeof assuredModeRaw });
+  const settlementMode = (assuredModeRaw as 'mock' | 'onchain') ?? 'mock';
+  console.log('[CONFIG DEBUG] settlementMode resolved to:', settlementMode);
 
   return {
     price: process.env.ASSURED_PRICE ?? '0.001',
