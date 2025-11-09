@@ -253,9 +253,6 @@ fastify.get('/api/good', async (req, reply) => {
   const receipt = extractReceipt(headerValue);
   if (!receipt) {
     const requirements = paymentRequirements('good');
-    console.log('[SENDING 402] Full requirements object:', JSON.stringify(requirements, null, 2));
-    console.log('[SENDING 402] escrowProgram value:', requirements.assured.escrowProgram);
-    console.log('[SENDING 402] reputationProgram value:', requirements.assured.reputationProgram);
     recordPaymentRequirement(requirements);
     return reply.code(402).send(requirements);
   }
@@ -716,9 +713,6 @@ function paymentRequirements(kind: ServiceKind): PaymentRequirements {
   const bond = deriveBondSnapshot(serviceId);
   const latency = deriveLatencySnapshot(serviceId);
   const mirrors = config.altService ? [buildMirrorDescriptor(serviceId, config.altService)] : undefined;
-  console.log('[PAYMENT REQ] escrowProgramId from config:', config.escrowProgramId);
-  console.log('[PAYMENT REQ] reputationProgramId from config:', config.reputationProgramId);
-  console.log('[PAYMENT REQ] serviceId:', serviceId);
   return {
     price: config.price,
     currency: config.currency,
@@ -737,7 +731,6 @@ function paymentRequirements(kind: ServiceKind): PaymentRequirements {
       bondBalance: bond.display,
       slaP95Ms: latency.p95Ms || undefined,
       mirrors,
-      _deployVersion: 'v2025-01-09-debug-response',
     },
   };
 }
@@ -818,8 +811,9 @@ function cloneRequirements(reqs: PaymentRequirements): PaymentRequirements {
 
 function loadConfig(): ServerConfig {
   const home = process.env.HOME ?? '';
-  const providerPath = process.env.ASSURED_PROVIDER_KEYPAIR
-    ? expandPath(process.env.ASSURED_PROVIDER_KEYPAIR, home)
+  const rawKeypairValue = process.env.ASSURED_PROVIDER_KEYPAIR;
+  const providerPath = rawKeypairValue
+    ? (rawKeypairValue.trim().startsWith('[') ? rawKeypairValue : expandPath(rawKeypairValue, home))
     : resolve(home, '.config/solana/id.json');
 
   // Railway bug workaround: try multiple variable names
@@ -828,24 +822,9 @@ function loadConfig(): ServerConfig {
   const settlementModeRaw = process.env.SETTLEMENT_MODE;
   const modeRaw = process.env.MODE;
 
-  console.log('[CONFIG DEBUG] All mode-related env vars:', {
-    ASSURED_MODE: { value: assuredModeRaw, type: typeof assuredModeRaw, length: assuredModeRaw?.length },
-    X402_MODE: { value: x402ModeRaw, type: typeof x402ModeRaw, length: x402ModeRaw?.length },
-    SETTLEMENT_MODE: { value: settlementModeRaw, type: typeof settlementModeRaw, length: settlementModeRaw?.length },
-    MODE: { value: modeRaw, type: typeof modeRaw, length: modeRaw?.length },
-  });
-
   // Try all variable names in order of preference
   const rawValue = assuredModeRaw || x402ModeRaw || settlementModeRaw || modeRaw;
   const settlementMode = (rawValue?.trim() || 'mock') as 'mock' | 'onchain';
-
-  console.log('[CONFIG DEBUG] settlementMode resolved to:', settlementMode, 'from variable:',
-    assuredModeRaw ? 'ASSURED_MODE' :
-    x402ModeRaw ? 'X402_MODE' :
-    settlementModeRaw ? 'SETTLEMENT_MODE' :
-    modeRaw ? 'MODE' : 'default');
-  console.log('[CONFIG DEBUG] escrowProgramId:', process.env.ASSURED_ESCROW_PROGRAM_ID ?? '6zpAcx4Yo9MmDf4w8pBGez8bm47zyKuyjr5Y5QkC3ayL');
-  console.log('[CONFIG DEBUG] reputationProgramId:', process.env.ASSURED_REPUTATION_PROGRAM_ID ?? '8QFXHzWC1hDC7GQTNqBhsVRLURpYfXFBzT5Vb4NTxDh5');
 
   return {
     price: process.env.ASSURED_PRICE || '0.001',
