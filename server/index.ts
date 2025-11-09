@@ -253,6 +253,9 @@ fastify.get('/api/good', async (req, reply) => {
   const receipt = extractReceipt(headerValue);
   if (!receipt) {
     const requirements = paymentRequirements('good');
+    console.log('[SENDING 402] Full requirements object:', JSON.stringify(requirements, null, 2));
+    console.log('[SENDING 402] escrowProgram value:', requirements.assured.escrowProgram);
+    console.log('[SENDING 402] reputationProgram value:', requirements.assured.reputationProgram);
     recordPaymentRequirement(requirements);
     return reply.code(402).send(requirements);
   }
@@ -734,7 +737,7 @@ function paymentRequirements(kind: ServiceKind): PaymentRequirements {
       bondBalance: bond.display,
       slaP95Ms: latency.p95Ms || undefined,
       mirrors,
-      _deployVersion: 'v2025-01-09-fix',
+      _deployVersion: 'v2025-01-09-debug-response',
     },
   };
 }
