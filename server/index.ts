@@ -6,8 +6,8 @@ import { createHash, createHmac } from 'crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import fastifyRawBody from 'fastify-raw-body';
-import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, TransactionInstruction, Transaction, sendAndConfirmTransaction } from '@solana/web3.js';
-import { AnchorProvider, Program, Idl } from '@coral-xyz/anchor';
+import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { AnchorProvider, Program } from '@coral-xyz/anchor';
 import BN from 'bn.js/lib/bn.js';
 import Ajv from 'ajv';
 import nacl from 'tweetnacl';
@@ -15,18 +15,10 @@ import nacl from 'tweetnacl';
 import { Assured402Client, balanced, cheap, strict, type Policy } from '../sdk/ts/index.ts';
 import type { Facilitator, PaymentProof } from '../sdk/ts/facilitators.ts';
 
-import escrowIdlJson from '../idl/escrow.json' assert { type: 'json' };
+import escrowIdlJson from '../contracts/escrow/target/idl/escrow.json' assert { type: 'json' };
 
-// Minimal IDL without accounts to avoid BorshCoder issues
-// We only use program.methods for instructions, not program.account for data fetching
-const escrowIdl = {
-  address: escrowIdlJson.address,
-  metadata: escrowIdlJson.metadata,
-  instructions: escrowIdlJson.instructions,
-  types: escrowIdlJson.types,
-  events: escrowIdlJson.events,
-  errors: escrowIdlJson.errors,
-} as any;
+// Use the full IDL (accounts+types) now that it's spec-compatible with Anchor 0.32
+const escrowIdl = escrowIdlJson as any;
 
 type ServiceKind = 'good' | 'bad';
 
@@ -866,7 +858,7 @@ function loadConfig(): ServerConfig {
       good: process.env.ASSURED_GOOD_SERVICE_ID ?? 'demo:good',
       bad: process.env.ASSURED_BAD_SERVICE_ID ?? 'demo:bad',
     },
-    streamServiceId: process.env.ASSURED_STREAM_SERVICE_ID ?? 'demo:good_stream',
+    streamServiceId: process.env.ASSURED_STREAM_SERVICE_ID ?? 'demo:strm',
     webhookSecret: process.env.ASSURED_WEBHOOK_SECRET,
     settlementMode,
     providerKeypairPath: providerPath,
@@ -1512,40 +1504,6 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Manual instruction encoding to bypass Anchor's BorshCoder issues with IDL spec 0.1.0
-function encodeFulfillInstruction(responseHash: Buffer, ts: BN, providerSig: Buffer): Buffer {
-  // Discriminator from IDL: [143, 2, 52, 206, 174, 164, 247, 72]
-  const discriminator = Buffer.from([143, 2, 52, 206, 174, 164, 247, 72]);
-
-  // Manually encode args: response_hash (32 bytes), ts (u64), provider_sig (bytes)
-  const tsBuffer = Buffer.alloc(8);
-  tsBuffer.writeBigUInt64LE(BigInt(ts.toString()));
-
-  // Encode provider_sig as length-prefixed bytes
-  const sigLenBuffer = Buffer.alloc(4);
-  sigLenBuffer.writeUInt32LE(providerSig.length);
-
-  return Buffer.concat([discriminator, responseHash, tsBuffer, sigLenBuffer, providerSig]);
-}
-
-function encodeFulfillPartialInstruction(chunkHash: Buffer, units: BN, ts: BN, providerSig: Buffer): Buffer {
-  // Discriminator from IDL: [127, 170, 226, 216, 143, 247, 87, 9]
-  const discriminator = Buffer.from([127, 170, 226, 216, 143, 247, 87, 9]);
-
-  // Manually encode args: chunk_hash (32 bytes), units (u64), ts (u64), provider_sig (bytes)
-  const unitsBuffer = Buffer.alloc(8);
-  unitsBuffer.writeBigUInt64LE(BigInt(units.toString()));
-
-  const tsBuffer = Buffer.alloc(8);
-  tsBuffer.writeBigUInt64LE(BigInt(ts.toString()));
-
-  // Encode provider_sig as length-prefixed bytes
-  const sigLenBuffer = Buffer.alloc(4);
-  sigLenBuffer.writeUInt32LE(providerSig.length);
-
-  return Buffer.concat([discriminator, chunkHash, unitsBuffer, tsBuffer, sigLenBuffer, providerSig]);
-}
-
 function createSettlementManager(
   cfg: ServerConfig,
   instance: FastifyInstance,
@@ -1591,8 +1549,7 @@ function createSettlementManager(
   const wallet = createWallet(keypair);
   const provider = new AnchorProvider(connection, wallet, AnchorProvider.defaultOptions());
   const programId = new PublicKey(cfg.escrowProgramId);
-  // Program creation removed - using manual transaction building instead
-  // const program = new (Program as any)(escrowIdl, programId, provider);
+  const program = new Program({ ...(escrowIdl as any), address: programId.toBase58() }, provider);
   providerPublicKey = keypair.publicKey;
   refreshProviderBalance(connection, keypair.publicKey, instance.log);
   setInterval(() => refreshProviderBalance(connection, keypair.publicKey!, instance.log), 30_000).unref?.();
@@ -1607,23 +1564,16 @@ function createSettlementManager(
         programId
       );
       const ts = new BN(Math.floor(req.deliveredAt / 1000));
-      const responseHash = Buffer.from(req.responseHash);
+      const responseHash = Array.from(req.responseHash);
       const providerSig = req.signature ? Buffer.from(req.signature, 'base64') : Buffer.alloc(0);
 
-      // Manual instruction encoding
-      const instructionData = encodeFulfillInstruction(responseHash, ts, providerSig);
-
-      const instruction = new TransactionInstruction({
-        keys: [
-          { pubkey: escrowCall, isSigner: false, isWritable: true },
-          { pubkey: keypair.publicKey, isSigner: true, isWritable: false },
-        ],
-        programId,
-        data: instructionData,
-      });
-
-      const transaction = new Transaction().add(instruction);
-      const signature = await sendAndConfirmTransaction(connection, transaction, [keypair]);
+      const signature = await program.methods
+        .fulfill(responseHash, ts, providerSig)
+        .accounts({
+          escrowCall,
+          provider: keypair.publicKey,
+        })
+        .rpc();
       return signature;
     },
     async fulfillPartial(req) {
@@ -1632,23 +1582,17 @@ function createSettlementManager(
         programId
       );
       const ts = new BN(Math.floor(req.deliveredAt / 1000));
-      const chunkHash = Buffer.from(req.chunkHash);
+      const chunkHash = Array.from(req.chunkHash);
       const providerSig = req.signature ? Buffer.from(req.signature, 'base64') : Buffer.alloc(0);
+      const units = new BN(req.units);
 
-      // Manual instruction encoding
-      const instructionData = encodeFulfillPartialInstruction(chunkHash, new BN(req.units), ts, providerSig);
-
-      const instruction = new TransactionInstruction({
-        keys: [
-          { pubkey: escrowCall, isSigner: false, isWritable: true },
-          { pubkey: keypair.publicKey, isSigner: true, isWritable: false },
-        ],
-        programId,
-        data: instructionData,
-      });
-
-      const transaction = new Transaction().add(instruction);
-      const signature = await sendAndConfirmTransaction(connection, transaction, [keypair]);
+      const signature = await program.methods
+        .fulfillPartial(chunkHash, units, ts, providerSig)
+        .accounts({
+          escrowCall,
+          provider: keypair.publicKey,
+        })
+        .rpc();
       return signature;
     },
   };

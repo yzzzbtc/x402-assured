@@ -1,5 +1,5 @@
 // sdk/ts/facilitators.ts
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 
 import { AnchorProvider, Program } from '@coral-xyz/anchor';
 import type { Wallet } from '@coral-xyz/anchor';
@@ -114,8 +114,10 @@ export function nativeFacilitator({ connection, wallet, escrowProgramId }: Nativ
 }
 
 function generateCallId(serviceId: string): string {
-  const suffix = randomBytes(6).toString('hex');
-  return `${serviceId}:${Date.now().toString(36)}:${suffix}`;
+  const serviceSlug = createHash('sha256').update(serviceId).digest('hex').slice(0, 8);
+  const tsPart = Date.now().toString(36).slice(-8).padStart(8, '0');
+  const entropy = randomBytes(5).toString('hex');
+  return `${serviceSlug}-${tsPart}-${entropy}`;
 }
 
 function encodePaymentHeader(data: Record<string, unknown>): string {

@@ -67,7 +67,7 @@
       ]
     },
     {
-      "name": "fulfill_partial",
+      "name": "fulfillPartial",
       "discriminator": [
         127,
         170,
@@ -131,7 +131,7 @@
       ]
     },
     {
-      "name": "init_payment",
+      "name": "initPayment",
       "discriminator": [
         123,
         125,
@@ -205,7 +205,7 @@
       ]
     },
     {
-      "name": "raise_dispute",
+      "name": "raiseDispute",
       "discriminator": [
         41,
         243,

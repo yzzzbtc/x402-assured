@@ -148,6 +148,23 @@ program
         console.log(`txSig ${payment.txSig}`);
       }
 
+      // Also check payment response header for on-chain mode
+      const paymentResponse = response.headers.get('x-payment-response');
+      if (paymentResponse && !payment) {
+        const parsed = decodeBase64Json(paymentResponse);
+        if (parsed?.callId) {
+          console.log(`${label} payment callId ${parsed.callId}`);
+        }
+        if (parsed?.initTxSig) {
+          console.log(`initPayment txSig ${parsed.initTxSig}`);
+          console.log(`View on Solana Explorer: https://explorer.solana.com/tx/${parsed.initTxSig}?cluster=devnet`);
+        }
+        if (parsed?.fulfillTxSig) {
+          console.log(`fulfill txSig ${parsed.fulfillTxSig}`);
+          console.log(`View on Solana Explorer: https://explorer.solana.com/tx/${parsed.fulfillTxSig}?cluster=devnet`);
+        }
+      }
+
       const body = await safeJson(response);
       if (response.ok) {
         console.log(`${label} outcome: released`);
