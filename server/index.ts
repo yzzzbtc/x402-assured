@@ -1339,17 +1339,45 @@ async function executeRun(body: RunRequestBody): Promise<CallTranscript> {
 }
 
 /**
+ * Wrapper class that adds lastProof() method to the SDK's nativeFacilitator
+ */
+class NativeFacilitatorWrapper implements Facilitator {
+  name: 'native' = 'native';
+  private proof?: PaymentProof;
+  private inner: Facilitator;
+
+  constructor(connection: Connection, wallet: any, escrowProgramId: string) {
+    this.inner = nativeFacilitator({ connection, wallet, escrowProgramId });
+  }
+
+  async verifyPayment(req: PaymentRequirements): Promise<PaymentProof> {
+    this.proof = await this.inner.verifyPayment(req);
+    return this.proof;
+  }
+
+  async settle(proof: PaymentProof): Promise<void> {
+    if (this.inner.settle) {
+      await this.inner.settle(proof);
+    }
+  }
+
+  lastProof(): PaymentProof | undefined {
+    return this.proof;
+  }
+}
+
+/**
  * Creates a facilitator instance based on settlement mode.
  * Returns SDK's nativeFacilitator when in on-chain mode, otherwise returns a mock facilitator.
  */
 function createFacilitator(): Facilitator {
   if (onchainConnection && onchainWallet && onchainEscrowProgramId) {
     fastify.log.info('creating on-chain native facilitator');
-    return nativeFacilitator({
-      connection: onchainConnection,
-      wallet: onchainWallet,
-      escrowProgramId: onchainEscrowProgramId,
-    });
+    return new NativeFacilitatorWrapper(
+      onchainConnection,
+      onchainWallet,
+      onchainEscrowProgramId
+    );
   }
   fastify.log.info('creating mock facilitator');
   return new ServerFacilitator();
