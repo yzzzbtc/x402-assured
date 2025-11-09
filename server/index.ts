@@ -837,6 +837,8 @@ function loadConfig(): ServerConfig {
     x402ModeRaw ? 'X402_MODE' :
     settlementModeRaw ? 'SETTLEMENT_MODE' :
     modeRaw ? 'MODE' : 'default');
+  console.log('[CONFIG DEBUG] escrowProgramId:', process.env.ASSURED_ESCROW_PROGRAM_ID ?? '6zpAcx4Yo9MmDf4w8pBGez8bm47zyKuyjr5Y5QkC3ayL');
+  console.log('[CONFIG DEBUG] reputationProgramId:', process.env.ASSURED_REPUTATION_PROGRAM_ID ?? '8QFXHzWC1hDC7GQTNqBhsVRLURpYfXFBzT5Vb4NTxDh5');
 
   return {
     price: process.env.ASSURED_PRICE ?? '0.001',
