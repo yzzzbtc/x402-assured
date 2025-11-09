@@ -713,6 +713,9 @@ function paymentRequirements(kind: ServiceKind): PaymentRequirements {
   const bond = deriveBondSnapshot(serviceId);
   const latency = deriveLatencySnapshot(serviceId);
   const mirrors = config.altService ? [buildMirrorDescriptor(serviceId, config.altService)] : undefined;
+  console.log('[PAYMENT REQ] escrowProgramId from config:', config.escrowProgramId);
+  console.log('[PAYMENT REQ] reputationProgramId from config:', config.reputationProgramId);
+  console.log('[PAYMENT REQ] serviceId:', serviceId);
   return {
     price: config.price,
     currency: config.currency,
@@ -731,6 +734,7 @@ function paymentRequirements(kind: ServiceKind): PaymentRequirements {
       bondBalance: bond.display,
       slaP95Ms: latency.p95Ms || undefined,
       mirrors,
+      _deployVersion: 'v2025-01-09-fix',
     },
   };
 }
