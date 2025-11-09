@@ -602,30 +602,38 @@ export default function App() {
                       </div>
                     </dl>
                     <div className="mt-4 flex items-center gap-3">
-                      <button
-                        onClick={() => {
-                          if (selectedCall.trace) {
-                            const isValid = verifyTrace(
-                              selectedCall.callId,
-                              selectedCall.trace.responseHash,
-                              selectedCall.trace.savedAt,
-                              selectedCall.trace.signature,
-                              selectedCall.trace.signer
-                            );
-                            setTraceVerified(isValid);
-                          }
-                        }}
-                        className="rounded-lg border border-blue-500/40 bg-blue-500/10 px-4 py-2 text-sm font-semibold text-blue-200 hover:bg-blue-500/20 transition-colors"
-                      >
-                        Verify Trace Signature
-                      </button>
-                      {traceVerified !== null && (
-                        <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
-                          traceVerified
-                            ? 'border border-emerald-500/40 bg-emerald-500/20 text-emerald-300'
-                            : 'border border-rose-500/40 bg-rose-500/20 text-rose-300'
-                        }`}>
-                          {traceVerified ? '✓ Valid Signature' : '✗ Invalid Signature'}
+                      {selectedCall.trace.signature && selectedCall.trace.signer ? (
+                        <>
+                          <button
+                            onClick={() => {
+                              if (selectedCall.trace) {
+                                const isValid = verifyTrace(
+                                  selectedCall.callId,
+                                  selectedCall.trace.responseHash,
+                                  selectedCall.trace.savedAt,
+                                  selectedCall.trace.signature,
+                                  selectedCall.trace.signer
+                                );
+                                setTraceVerified(isValid);
+                              }
+                            }}
+                            className="rounded-lg border border-blue-500/40 bg-blue-500/10 px-4 py-2 text-sm font-semibold text-blue-200 hover:bg-blue-500/20 transition-colors"
+                          >
+                            Verify Trace Signature
+                          </button>
+                          {traceVerified !== null && (
+                            <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
+                              traceVerified
+                                ? 'border border-emerald-500/40 bg-emerald-500/20 text-emerald-300'
+                                : 'border border-rose-500/40 bg-rose-500/20 text-rose-300'
+                            }`}>
+                              {traceVerified ? '✓ Valid Signature' : '✗ Invalid Signature'}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="inline-flex items-center gap-2 rounded-full border border-slate-600/40 bg-slate-600/10 px-3 py-1 text-xs font-semibold text-slate-400">
+                          ⚠ No trace signature provided
                         </span>
                       )}
                     </div>
