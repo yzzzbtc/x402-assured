@@ -811,10 +811,8 @@ function cloneRequirements(reqs: PaymentRequirements): PaymentRequirements {
 
 function loadConfig(): ServerConfig {
   const home = process.env.HOME ?? '';
-  const rawKeypairValue = process.env.ASSURED_PROVIDER_KEYPAIR;
-  const providerPath = rawKeypairValue
-    ? (rawKeypairValue.trim().startsWith('[') ? rawKeypairValue : expandPath(rawKeypairValue, home))
-    : resolve(home, '.config/solana/id.json');
+  // Pass raw value to loadKeypair - it handles both file paths and JSON arrays
+  const providerPath = process.env.ASSURED_PROVIDER_KEYPAIR || resolve(home, '.config/solana/id.json');
 
   // Railway bug workaround: try multiple variable names
   const assuredModeRaw = process.env.ASSURED_MODE;
@@ -1597,10 +1595,18 @@ function loadKeypair(maybePath?: string): Keypair | null {
   fastify.log.info({ inputPreview, inputLength: maybePath.length, inputType: typeof maybePath }, 'loadKeypair received input');
 
   try {
+    // Handle tilde expansion for file paths
+    let cleanPath = maybePath;
+    if (maybePath.startsWith('~')) {
+      const home = process.env.HOME ?? '';
+      cleanPath = resolve(home, maybePath.slice(1));
+      fastify.log.info({ original: maybePath, expanded: cleanPath }, 'expanded tilde path');
+    }
+
     // Try as file path first
-    if (existsSync(maybePath)) {
+    if (existsSync(cleanPath)) {
       fastify.log.info('loading keypair from file path');
-      const secret = JSON.parse(readFileSync(maybePath, 'utf8')) as number[];
+      const secret = JSON.parse(readFileSync(cleanPath, 'utf8')) as number[];
       return Keypair.fromSecretKey(Uint8Array.from(secret));
     }
 
