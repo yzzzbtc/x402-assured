@@ -841,26 +841,26 @@ function loadConfig(): ServerConfig {
   console.log('[CONFIG DEBUG] reputationProgramId:', process.env.ASSURED_REPUTATION_PROGRAM_ID ?? '8QFXHzWC1hDC7GQTNqBhsVRLURpYfXFBzT5Vb4NTxDh5');
 
   return {
-    price: process.env.ASSURED_PRICE ?? '0.001',
-    currency: process.env.ASSURED_CURRENCY ?? 'USDC',
-    network: process.env.ASSURED_NETWORK ?? 'solana-devnet',
+    price: process.env.ASSURED_PRICE || '0.001',
+    currency: process.env.ASSURED_CURRENCY || 'USDC',
+    network: process.env.ASSURED_NETWORK || 'solana-devnet',
     recipient:
-      process.env.ASSURED_RECIPIENT ?? 'CTdyT6ZctmsuPhkJrfcvQgAe95uPS45aXErGLKAhAZAA',
+      process.env.ASSURED_RECIPIENT || 'CTdyT6ZctmsuPhkJrfcvQgAe95uPS45aXErGLKAhAZAA',
     escrowProgramId:
-      process.env.ASSURED_ESCROW_PROGRAM_ID ?? '6zpAcx4Yo9MmDf4w8pBGez8bm47zyKuyjr5Y5QkC3ayL',
+      process.env.ASSURED_ESCROW_PROGRAM_ID || '6zpAcx4Yo9MmDf4w8pBGez8bm47zyKuyjr5Y5QkC3ayL',
     reputationProgramId:
-      process.env.ASSURED_REPUTATION_PROGRAM_ID ?? '8QFXHzWC1hDC7GQTNqBhsVRLURpYfXFBzT5Vb4NTxDh5',
-    altService: process.env.ASSURED_ALT_SERVICE ?? 'http://localhost:3000/api/good_mirror',
+      process.env.ASSURED_REPUTATION_PROGRAM_ID || '8QFXHzWC1hDC7GQTNqBhsVRLURpYfXFBzT5Vb4NTxDh5',
+    altService: process.env.ASSURED_ALT_SERVICE || 'http://localhost:3000/api/good_mirror',
     sla: {
-      good: Number(process.env.ASSURED_GOOD_SLA ?? '2000'),
-      bad: Number(process.env.ASSURED_BAD_SLA ?? '1000'),
+      good: Number(process.env.ASSURED_GOOD_SLA || '2000'),
+      bad: Number(process.env.ASSURED_BAD_SLA || '1000'),
     },
-    disputeWindow: Number(process.env.ASSURED_DISPUTE_WINDOW ?? '10'),
+    disputeWindow: Number(process.env.ASSURED_DISPUTE_WINDOW || '10'),
     serviceIds: {
-      good: process.env.ASSURED_GOOD_SERVICE_ID ?? 'demo:good',
-      bad: process.env.ASSURED_BAD_SERVICE_ID ?? 'demo:bad',
+      good: process.env.ASSURED_GOOD_SERVICE_ID || 'demo:good',
+      bad: process.env.ASSURED_BAD_SERVICE_ID || 'demo:bad',
     },
-    streamServiceId: process.env.ASSURED_STREAM_SERVICE_ID ?? 'demo:strm',
+    streamServiceId: process.env.ASSURED_STREAM_SERVICE_ID || 'demo:strm',
     webhookSecret: process.env.ASSURED_WEBHOOK_SECRET,
     settlementMode,
     providerKeypairPath: providerPath,
