@@ -1,75 +1,54 @@
 {
-  "version": "0.1.0",
-  "name": "escrow",
+  "address": "6zpAcx4Yo9MmDf4w8pBGez8bm47zyKuyjr5Y5QkC3ayL",
+  "metadata": {
+    "name": "escrow",
+    "version": "0.1.0",
+    "spec": "0.1.0"
+  },
   "instructions": [
     {
-      "name": "initPayment",
-      "accounts": [
-        {
-          "name": "escrowCall",
-          "isMut": true,
-          "isSigner": false
-        },
-        {
-          "name": "payer",
-          "isMut": true,
-          "isSigner": true
-        },
-        {
-          "name": "provider",
-          "isMut": false,
-          "isSigner": false
-        },
-        {
-          "name": "systemProgram",
-          "isMut": false,
-          "isSigner": false
-        }
-      ],
-      "args": [
-        {
-          "name": "callId",
-          "type": "string"
-        },
-        {
-          "name": "serviceId",
-          "type": "string"
-        },
-        {
-          "name": "amount",
-          "type": "u64"
-        },
-        {
-          "name": "slaMs",
-          "type": "u64"
-        },
-        {
-          "name": "disputeWindowS",
-          "type": "u64"
-        },
-        {
-          "name": "totalUnits",
-          "type": "u64"
-        }
-      ]
-    },
-    {
       "name": "fulfill",
+      "discriminator": [
+        143,
+        2,
+        52,
+        206,
+        174,
+        164,
+        247,
+        72
+      ],
       "accounts": [
         {
-          "name": "escrowCall",
-          "isMut": true,
-          "isSigner": false
+          "name": "escrow_call",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  108,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow_call.call_id",
+                "account": "EscrowCall"
+              }
+            ]
+          }
         },
         {
           "name": "provider",
-          "isMut": false,
-          "isSigner": true
+          "signer": true
         }
       ],
       "args": [
         {
-          "name": "responseHash",
+          "name": "response_hash",
           "type": {
             "array": [
               "u8",
@@ -82,30 +61,54 @@
           "type": "u64"
         },
         {
-          "name": "providerSig",
-          "type": {
-            "vec": "u8"
-          }
+          "name": "provider_sig",
+          "type": "bytes"
         }
       ]
     },
     {
       "name": "fulfillPartial",
+      "discriminator": [
+        127,
+        170,
+        226,
+        216,
+        143,
+        247,
+        87,
+        9
+      ],
       "accounts": [
         {
-          "name": "escrowCall",
-          "isMut": true,
-          "isSigner": false
+          "name": "escrow_call",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  108,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow_call.call_id",
+                "account": "EscrowCall"
+              }
+            ]
+          }
         },
         {
           "name": "provider",
-          "isMut": false,
-          "isSigner": true
+          "signer": true
         }
       ],
       "args": [
         {
-          "name": "chunkHash",
+          "name": "chunk_hash",
           "type": {
             "array": [
               "u8",
@@ -122,25 +125,123 @@
           "type": "u64"
         },
         {
-          "name": "providerSig",
-          "type": {
-            "vec": "u8"
+          "name": "provider_sig",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "initPayment",
+      "discriminator": [
+        123,
+        125,
+        2,
+        117,
+        145,
+        48,
+        228,
+        64
+      ],
+      "accounts": [
+        {
+          "name": "escrow_call",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  108,
+                  108
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "call_id"
+              }
+            ]
           }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "provider"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "call_id",
+          "type": "string"
+        },
+        {
+          "name": "service_id",
+          "type": "string"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "sla_ms",
+          "type": "u64"
+        },
+        {
+          "name": "dispute_window_s",
+          "type": "u64"
+        },
+        {
+          "name": "total_units",
+          "type": "u64"
         }
       ]
     },
     {
       "name": "raiseDispute",
+      "discriminator": [
+        41,
+        243,
+        1,
+        51,
+        150,
+        95,
+        246,
+        73
+      ],
       "accounts": [
         {
-          "name": "escrowCall",
-          "isMut": true,
-          "isSigner": false
+          "name": "escrow_call",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  108,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow_call.call_id",
+                "account": "EscrowCall"
+              }
+            ]
+          }
         },
         {
           "name": "reporter",
-          "isMut": false,
-          "isSigner": true
+          "signer": true
         }
       ],
       "args": [
@@ -149,7 +250,7 @@
           "type": "u8"
         },
         {
-          "name": "reasonHash",
+          "name": "reason_hash",
           "type": {
             "array": [
               "u8",
@@ -158,30 +259,53 @@
           }
         },
         {
-          "name": "reporterSig",
-          "type": {
-            "vec": "u8"
-          }
+          "name": "_reporter_sig",
+          "type": "bytes"
         }
       ]
     },
     {
       "name": "settle",
+      "discriminator": [
+        175,
+        42,
+        185,
+        87,
+        144,
+        131,
+        102,
+        212
+      ],
       "accounts": [
         {
-          "name": "escrowCall",
-          "isMut": true,
-          "isSigner": false
+          "name": "escrow_call",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  97,
+                  108,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow_call.call_id",
+                "account": "EscrowCall"
+              }
+            ]
+          }
         },
         {
           "name": "payer",
-          "isMut": true,
-          "isSigner": false
+          "writable": true
         },
         {
           "name": "provider",
-          "isMut": true,
-          "isSigner": false
+          "writable": true
         }
       ],
       "args": []
@@ -189,189 +313,124 @@
   ],
   "accounts": [
     {
-      "name": "escrowCall",
+      "name": "EscrowCall",
+      "discriminator": [
+        254,
+        3,
+        166,
+        184,
+        14,
+        28,
+        141,
+        36
+      ],
       "type": {
         "kind": "struct",
         "fields": [
+          { "name": "call_id", "type": "string" },
+          { "name": "payer", "type": "pubkey" },
+          { "name": "service_id", "type": "string" },
+          { "name": "provider", "type": "pubkey" },
+          { "name": "amount", "type": "u64" },
+          { "name": "start_ts", "type": "u64" },
+          { "name": "sla_ms", "type": "u64" },
+          { "name": "dispute_window_s", "type": "u64" },
+          { "name": "status", "type": "u8" },
           {
-            "name": "callId",
-            "type": "string"
+            "name": "delivered_ts",
+            "type": { "option": "u64" }
           },
           {
-            "name": "payer",
-            "type": "publicKey"
-          },
-          {
-            "name": "serviceId",
-            "type": "string"
-          },
-          {
-            "name": "provider",
-            "type": "publicKey"
-          },
-          {
-            "name": "amount",
-            "type": "u64"
-          },
-          {
-            "name": "startTs",
-            "type": "u64"
-          },
-          {
-            "name": "slaMs",
-            "type": "u64"
-          },
-          {
-            "name": "disputeWindowS",
-            "type": "u64"
-          },
-          {
-            "name": "status",
-            "type": "u8"
-          },
-          {
-            "name": "deliveredTs",
+            "name": "response_hash",
             "type": {
-              "option": "u64"
+              "array": ["u8", 32]
             }
           },
-          {
-            "name": "responseHash",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "disputed",
-            "type": "bool"
-          },
-          {
-            "name": "totalUnits",
-            "type": "u64"
-          },
-          {
-            "name": "unitsReleased",
-            "type": "u64"
-          },
-          {
-            "name": "providerSig",
-            "type": {
-              "vec": "u8"
-            }
-          }
+          { "name": "disputed", "type": "bool" },
+          { "name": "total_units", "type": "u64" },
+          { "name": "units_released", "type": "u64" },
+          { "name": "provider_sig", "type": "bytes" }
         ]
       }
     }
   ],
   "events": [
     {
-      "name": "Fulfilled",
-      "fields": [
-        {
-          "name": "callId",
-          "type": "string",
-          "index": false
-        },
-        {
-          "name": "ts",
-          "type": "u64",
-          "index": false
-        }
-      ]
-    },
-    {
-      "name": "Released",
-      "fields": [
-        {
-          "name": "callId",
-          "type": "string",
-          "index": false
-        }
-      ]
-    },
-    {
-      "name": "Refunded",
-      "fields": [
-        {
-          "name": "callId",
-          "type": "string",
-          "index": false
-        }
-      ]
-    },
-    {
       "name": "Disputed",
-      "fields": [
-        {
-          "name": "callId",
-          "type": "string",
-          "index": false
-        },
-        {
-          "name": "kind",
-          "type": "u8",
-          "index": false
-        },
-        {
-          "name": "reasonHash",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          },
-          "index": false
-        }
+      "discriminator": [
+        186,
+        235,
+        91,
+        209,
+        148,
+        93,
+        152,
+        217
+      ]
+    },
+    {
+      "name": "Fulfilled",
+      "discriminator": [
+        210,
+        174,
+        131,
+        213,
+        40,
+        182,
+        83,
+        110
       ]
     },
     {
       "name": "PartialReleased",
-      "fields": [
-        {
-          "name": "callId",
-          "type": "string",
-          "index": false
-        },
-        {
-          "name": "units",
-          "type": "u64",
-          "index": false
-        },
-        {
-          "name": "totalUnits",
-          "type": "u64",
-          "index": false
-        }
+      "discriminator": [
+        125,
+        234,
+        187,
+        168,
+        218,
+        186,
+        243,
+        112
+      ]
+    },
+    {
+      "name": "Refunded",
+      "discriminator": [
+        35,
+        103,
+        149,
+        246,
+        196,
+        123,
+        221,
+        99
+      ]
+    },
+    {
+      "name": "Released",
+      "discriminator": [
+        232,
+        229,
+        255,
+        136,
+        101,
+        189,
+        15,
+        220
       ]
     },
     {
       "name": "TraceSaved",
-      "fields": [
-        {
-          "name": "callId",
-          "type": "string",
-          "index": false
-        },
-        {
-          "name": "responseHash",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          },
-          "index": false
-        },
-        {
-          "name": "providerSig",
-          "type": {
-            "vec": "u8"
-          },
-          "index": false
-        }
+      "discriminator": [
+        237,
+        252,
+        96,
+        126,
+        230,
+        85,
+        128,
+        143
       ]
     }
   ],
@@ -412,7 +471,191 @@
       "msg": "Invalid units for partial release"
     }
   ],
-  "metadata": {
-    "address": "6zpAcx4Yo9MmDf4w8pBGez8bm47zyKuyjr5Y5QkC3ayL"
-  }
+  "types": [
+    {
+      "name": "Disputed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "call_id",
+            "type": "string"
+          },
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "reason_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "EscrowCall",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "call_id",
+            "type": "string"
+          },
+          {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "service_id",
+            "type": "string"
+          },
+          {
+            "name": "provider",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "start_ts",
+            "type": "u64"
+          },
+          {
+            "name": "sla_ms",
+            "type": "u64"
+          },
+          {
+            "name": "dispute_window_s",
+            "type": "u64"
+          },
+          {
+            "name": "status",
+            "type": "u8"
+          },
+          {
+            "name": "delivered_ts",
+            "type": {
+              "option": "u64"
+            }
+          },
+          {
+            "name": "response_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "disputed",
+            "type": "bool"
+          },
+          {
+            "name": "total_units",
+            "type": "u64"
+          },
+          {
+            "name": "units_released",
+            "type": "u64"
+          },
+          {
+            "name": "provider_sig",
+            "type": "bytes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Fulfilled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "call_id",
+            "type": "string"
+          },
+          {
+            "name": "ts",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PartialReleased",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "call_id",
+            "type": "string"
+          },
+          {
+            "name": "units",
+            "type": "u64"
+          },
+          {
+            "name": "total_units",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Refunded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "call_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Released",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "call_id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TraceSaved",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "call_id",
+            "type": "string"
+          },
+          {
+            "name": "response_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "provider_sig",
+            "type": "bytes"
+          }
+        ]
+      }
+    }
+  ]
 }
