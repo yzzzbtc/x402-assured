@@ -7,13 +7,13 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import fastifyRawBody from 'fastify-raw-body';
 import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
-import { AnchorProvider, Program } from '@coral-xyz/anchor';
+import { AnchorProvider, Program, type Wallet } from '@coral-xyz/anchor';
 import BN from 'bn.js/lib/bn.js';
 import Ajv from 'ajv';
 import nacl from 'tweetnacl';
 
 import { Assured402Client, balanced, cheap, strict, type Policy } from '../sdk/ts/index.ts';
-import type { Facilitator, PaymentProof } from '../sdk/ts/facilitators.ts';
+import { nativeFacilitator, type Facilitator, type PaymentProof } from '../sdk/ts/facilitators.ts';
 
 import escrowIdlJson from '../contracts/escrow/target/idl/escrow.json' assert { type: 'json' };
 
@@ -174,6 +174,11 @@ const RUN_RATE_LIMIT = { windowMs: 1000, max: 3 };
 const MIN_PROVIDER_SOL = 0.1;
 let providerBalanceLamports: number | null = null;
 let providerPublicKey: PublicKey | null = null;
+
+// On-chain facilitator parameters (set when in on-chain mode)
+let onchainConnection: Connection | null = null;
+let onchainWallet: Wallet | null = null;
+let onchainEscrowProgramId: string | null = null;
 const providerAuthority = loadKeypair(config.providerKeypairPath);
 const traceSigner = createTraceSigner(providerAuthority);
 providerPublicKey = traceSigner.keypair.publicKey;
@@ -612,7 +617,7 @@ fastify.post('/conformance', async (req, reply) => {
     return reply.send({ ok: false, checks });
   }
 
-  const facilitator = new ConformanceFacilitator();
+  const facilitator = createFacilitator();
   const policy = resolvePolicyPreset(policyPreset);
   const client = new Assured402Client({ facilitator, policy });
 
@@ -1285,7 +1290,7 @@ function allChecksPassed(checks: StructuredChecks): boolean {
 }
 
 async function runStandardFlow(targetUrl: string, policy: Policy): Promise<CallTranscript> {
-  const facilitator = new ServerFacilitator();
+  const facilitator = createFacilitator();
   const client = new Assured402Client({ facilitator, policy });
   const response = await client.fetch(targetUrl);
   const proof = facilitator.lastProof();
@@ -1331,6 +1336,23 @@ async function executeRun(body: RunRequestBody): Promise<CallTranscript> {
     default:
       throw new Error(`Unsupported run type: ${body.type}`);
   }
+}
+
+/**
+ * Creates a facilitator instance based on settlement mode.
+ * Returns SDK's nativeFacilitator when in on-chain mode, otherwise returns a mock facilitator.
+ */
+function createFacilitator(): Facilitator {
+  if (onchainConnection && onchainWallet && onchainEscrowProgramId) {
+    fastify.log.info('creating on-chain native facilitator');
+    return nativeFacilitator({
+      connection: onchainConnection,
+      wallet: onchainWallet,
+      escrowProgramId: onchainEscrowProgramId,
+    });
+  }
+  fastify.log.info('creating mock facilitator');
+  return new ServerFacilitator();
 }
 
 class ServerFacilitator implements Facilitator {
@@ -1539,6 +1561,11 @@ function createSettlementManager(
   providerPublicKey = keypair.publicKey;
   refreshProviderBalance(connection, keypair.publicKey, instance.log);
   setInterval(() => refreshProviderBalance(connection, keypair.publicKey!, instance.log), 30_000).unref?.();
+
+  // Store on-chain facilitator parameters for use in payment verification
+  onchainConnection = connection;
+  onchainWallet = wallet;
+  onchainEscrowProgramId = programId.toBase58();
 
   log.info({ programId: programId.toBase58() }, 'assured settlement running in on-chain mode');
 
