@@ -286,6 +286,7 @@ export default function App() {
   const [showFullHeader, setShowFullHeader] = useState(false);
   useEffect(() => {
     setShowFullHeader(false);
+    setTraceVerified(null);
   }, [selectedCallId]);
   const curlCommands = useMemo(() => {
     if (!lastRunInfo) return null;
